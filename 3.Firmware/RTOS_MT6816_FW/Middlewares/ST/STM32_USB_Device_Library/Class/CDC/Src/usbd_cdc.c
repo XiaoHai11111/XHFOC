@@ -728,24 +728,53 @@ static uint8_t USBD_CDC_DataIn(USBD_HandleTypeDef *pdev, uint8_t epnum)
   * @param  epnum: endpoint number
   * @retval status
   */
-static uint8_t USBD_CDC_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
+// static uint8_t USBD_CDC_DataOut(USBD_HandleTypeDef *pdev, uint8_t epnum)
+// {
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+//
+//   if (pdev->pClassData == NULL)
+//   {
+//     return (uint8_t)USBD_FAIL;
+//   }
+//
+//   /* Get the received data length */
+//   hcdc->RxLength = USBD_LL_GetRxDataSize(pdev, epnum);
+//
+//   /* USB data will be immediately processed, this allow next USB traffic being
+//   NAKed till the end of the application Xfer */
+//
+//   ((USBD_CDC_ItfTypeDef *)pdev->pUserData)->Receive(hcdc->RxBuffer, &hcdc->RxLength);
+//
+//   return (uint8_t)USBD_OK;
+// }
+static uint8_t  USBD_CDC_DataOut (USBD_HandleTypeDef *pdev, uint8_t epnum)
 {
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+  USBD_CDC_HandleTypeDef   *hcdc = (USBD_CDC_HandleTypeDef*) pdev->pClassData;
 
-  if (pdev->pClassData == NULL)
-  {
-    return (uint8_t)USBD_FAIL;
+  USBD_CDC_EP_HandleTypeDef* hEP_Rx;
+  if (epnum == CDC_OUT_EP) {
+    hEP_Rx = &hcdc->CDC_Rx;
+  } else if (epnum == ODRIVE_OUT_EP) {
+    hEP_Rx = &hcdc->ODRIVE_Rx;
+  } else {
+    return USBD_FAIL;
   }
 
   /* Get the received data length */
-  hcdc->RxLength = USBD_LL_GetRxDataSize(pdev, epnum);
+  hEP_Rx->Length = USBD_LL_GetRxDataSize (pdev, epnum);
 
   /* USB data will be immediately processed, this allow next USB traffic being
   NAKed till the end of the application Xfer */
+  if(pdev->pClassData != NULL)
+  {
+    ((USBD_CDC_ItfTypeDef *)pdev->pUserData)->Receive(hEP_Rx->Buffer, &hEP_Rx->Length, epnum);
 
-  ((USBD_CDC_ItfTypeDef *)pdev->pUserData)->Receive(hcdc->RxBuffer, &hcdc->RxLength);
-
-  return (uint8_t)USBD_OK;
+    return USBD_OK;
+  }
+  else
+  {
+    return USBD_FAIL;
+  }
 }
 
 /**
@@ -854,21 +883,44 @@ uint8_t USBD_CDC_RegisterInterface(USBD_HandleTypeDef *pdev,
   * @param  pbuff: Tx Buffer
   * @retval status
   */
-uint8_t USBD_CDC_SetTxBuffer(USBD_HandleTypeDef *pdev,
-                             uint8_t *pbuff, uint32_t length)
-{
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+// uint8_t USBD_CDC_SetTxBuffer(USBD_HandleTypeDef *pdev,
+//                              uint8_t *pbuff, uint32_t length)
+// {
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+//
+//   if (hcdc == NULL)
+//   {
+//     return (uint8_t)USBD_FAIL;
+//   }
+//
+//   hcdc->TxBuffer = pbuff;
+//   hcdc->TxLength = length;
+//
+//   return (uint8_t)USBD_OK;
+// }
 
-  if (hcdc == NULL)
-  {
-    return (uint8_t)USBD_FAIL;
+uint8_t  USBD_CDC_SetTxBuffer  (USBD_HandleTypeDef   *pdev,
+                                uint8_t  *pbuff,
+                                uint16_t length,
+                                uint8_t endpoint_pair)
+{
+  USBD_CDC_HandleTypeDef   *hcdc = (USBD_CDC_HandleTypeDef*) pdev->pClassData;
+
+  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
+  if (endpoint_pair == CDC_OUT_EP) {
+    hEP_Tx = &hcdc->CDC_Tx;
+  } else if (endpoint_pair == ODRIVE_OUT_EP) {
+    hEP_Tx = &hcdc->REF_Tx;
+  } else {
+    return USBD_FAIL;
   }
 
-  hcdc->TxBuffer = pbuff;
-  hcdc->TxLength = length;
+  hEP_Tx->Buffer = pbuff;
+  hEP_Tx->Length = length;
 
-  return (uint8_t)USBD_OK;
+  return USBD_OK;
 }
+
 
 /**
   * @brief  USBD_CDC_SetRxBuffer
@@ -876,18 +928,36 @@ uint8_t USBD_CDC_SetTxBuffer(USBD_HandleTypeDef *pdev,
   * @param  pbuff: Rx Buffer
   * @retval status
   */
-uint8_t USBD_CDC_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff)
+// uint8_t USBD_CDC_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff)
+// {
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+//
+//   if (hcdc == NULL)
+//   {
+//     return (uint8_t)USBD_FAIL;
+//   }
+//
+//   hcdc->RxBuffer = pbuff;
+//
+//   return (uint8_t)USBD_OK;
+// }
+uint8_t  USBD_CDC_SetRxBuffer  (USBD_HandleTypeDef   *pdev,
+                                uint8_t  *pbuff, uint8_t endpoint_pair)
 {
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+  USBD_CDC_HandleTypeDef   *hcdc = (USBD_CDC_HandleTypeDef*) pdev->pClassData;
 
-  if (hcdc == NULL)
-  {
-    return (uint8_t)USBD_FAIL;
+  USBD_CDC_EP_HandleTypeDef* hEP_Rx;
+  if (endpoint_pair == CDC_OUT_EP) {
+    hEP_Rx = &hcdc->CDC_Rx;
+  } else if (endpoint_pair == ODRIVE_OUT_EP) {
+    hEP_Rx = &hcdc->ODRIVE_Rx;
+  } else {
+    return USBD_FAIL;
   }
 
-  hcdc->RxBuffer = pbuff;
+  hEP_Rx->Buffer = pbuff;
 
-  return (uint8_t)USBD_OK;
+  return USBD_OK;
 }
 
 /**
@@ -896,31 +966,73 @@ uint8_t USBD_CDC_SetRxBuffer(USBD_HandleTypeDef *pdev, uint8_t *pbuff)
   * @param  pdev: device instance
   * @retval status
   */
-uint8_t USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev)
+// uint8_t USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev)
+// {
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+//   USBD_StatusTypeDef ret = USBD_BUSY;
+//
+//   if (pdev->pClassData == NULL)
+//   {
+//     return (uint8_t)USBD_FAIL;
+//   }
+//
+//   if (hcdc->TxState == 0U)
+//   {
+//     /* Tx Transfer in progress */
+//     hcdc->TxState = 1U;
+//
+//     /* Update the packet total length */
+//     pdev->ep_in[CDC_IN_EP & 0xFU].total_length = hcdc->TxLength;
+//
+//     /* Transmit next packet */
+//     (void)USBD_LL_Transmit(pdev, CDC_IN_EP, hcdc->TxBuffer, hcdc->TxLength);
+//
+//     ret = USBD_OK;
+//   }
+//
+//   return (uint8_t)ret;
+// }
+uint8_t  USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev, uint8_t endpoint_pair)
 {
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
-  USBD_StatusTypeDef ret = USBD_BUSY;
+  USBD_CDC_HandleTypeDef   *hcdc = (USBD_CDC_HandleTypeDef*) pdev->pClassData;
 
-  if (pdev->pClassData == NULL)
+  if(pdev->pClassData != NULL)
   {
-    return (uint8_t)USBD_FAIL;
-  }
+    // Select Endpoint
+    USBD_CDC_EP_HandleTypeDef* hEP_Tx;
+    uint8_t in_ep;
+    if (endpoint_pair == CDC_OUT_EP) {
+      hEP_Tx = &hcdc->CDC_Tx;
+      in_ep = CDC_IN_EP;
+    } else if (endpoint_pair == ODRIVE_OUT_EP) {
+      hEP_Tx = &hcdc->REF_Tx;
+      in_ep = ODRIVE_IN_EP;
+    } else {
+      return USBD_FAIL;
+    }
 
-  if (hcdc->TxState == 0U)
+    if(hEP_Tx->State == 0)
+    {
+      /* Tx Transfer in progress */
+      hEP_Tx->State = 1;
+
+      /* Transmit next packet */
+      USBD_LL_Transmit(pdev,
+                       in_ep,
+                       hEP_Tx->Buffer,
+                       hEP_Tx->Length);
+
+      return USBD_OK;
+    }
+    else
+    {
+      return USBD_BUSY;
+    }
+  }
+  else
   {
-    /* Tx Transfer in progress */
-    hcdc->TxState = 1U;
-
-    /* Update the packet total length */
-    pdev->ep_in[CDC_IN_EP & 0xFU].total_length = hcdc->TxLength;
-
-    /* Transmit next packet */
-    (void)USBD_LL_Transmit(pdev, CDC_IN_EP, hcdc->TxBuffer, hcdc->TxLength);
-
-    ret = USBD_OK;
+    return USBD_FAIL;
   }
-
-  return (uint8_t)ret;
 }
 
 /**
@@ -929,29 +1041,63 @@ uint8_t USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev)
   * @param  pdev: device instance
   * @retval status
   */
-uint8_t USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev)
+// uint8_t USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev)
+// {
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+//
+//   if (pdev->pClassData == NULL)
+//   {
+//     return (uint8_t)USBD_FAIL;
+//   }
+//
+//   if (pdev->dev_speed == USBD_SPEED_HIGH)
+//   {
+//     /* Prepare Out endpoint to receive next packet */
+//     (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->RxBuffer,
+//                                  CDC_DATA_HS_OUT_PACKET_SIZE);
+//   }
+//   else
+//   {
+//     /* Prepare Out endpoint to receive next packet */
+//     (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->RxBuffer,
+//                                  CDC_DATA_FS_OUT_PACKET_SIZE);
+//   }
+//
+//   return (uint8_t)USBD_OK;
+// }
+
+uint8_t  USBD_CDC_ReceivePacket(USBD_HandleTypeDef *pdev, uint8_t endpoint_pair)
 {
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef *)pdev->pClassData;
+  USBD_CDC_HandleTypeDef   *hcdc = (USBD_CDC_HandleTypeDef*) pdev->pClassData;
 
-  if (pdev->pClassData == NULL)
+  /* Suspend or Resume USB Out process */
+  if(pdev->pClassData != NULL)
   {
-    return (uint8_t)USBD_FAIL;
-  }
+    // Select Endpoint
+    USBD_CDC_EP_HandleTypeDef* hEP_Rx;
+    uint8_t out_ep;
+    if (endpoint_pair == CDC_OUT_EP) {
+      hEP_Rx = &hcdc->CDC_Rx;
+      out_ep = CDC_OUT_EP;
+    } else if (endpoint_pair == ODRIVE_OUT_EP) {
+      hEP_Rx = &hcdc->ODRIVE_Rx;
+      out_ep = ODRIVE_OUT_EP;
+    } else {
+      return USBD_FAIL;
+    }
 
-  if (pdev->dev_speed == USBD_SPEED_HIGH)
-  {
     /* Prepare Out endpoint to receive next packet */
-    (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->RxBuffer,
-                                 CDC_DATA_HS_OUT_PACKET_SIZE);
+    USBD_LL_PrepareReceive(pdev,
+                           out_ep,
+                           hEP_Rx->Buffer,
+                           pdev->dev_speed == USBD_SPEED_HIGH ? CDC_DATA_HS_OUT_PACKET_SIZE : CDC_DATA_FS_OUT_PACKET_SIZE);
+
+    return USBD_OK;
   }
   else
   {
-    /* Prepare Out endpoint to receive next packet */
-    (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->RxBuffer,
-                                 CDC_DATA_FS_OUT_PACKET_SIZE);
+    return USBD_FAIL;
   }
-
-  return (uint8_t)USBD_OK;
 }
 /**
   * @}

@@ -139,7 +139,23 @@ void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd)
 #endif /* USE_HAL_PCD_REGISTER_CALLBACKS */
 {
   /* USER CODE BEGIN HAL_PCD_SetupStageCallback_PreTreatment */
+  USBD_StatusTypeDef ret = USBD_OK;
+  USBD_HandleTypeDef *pdev = hpcd->pData;
+  USBD_SetupReqTypedef    *req = &pdev->request;
+  USBD_ParseSetupRequest(req, (uint8_t *)hpcd->Setup);
+  if ( ( USB_REQ_TYPE_VENDOR == (req->bmRequest & USB_REQ_TYPE_MASK) ) && ( MS_VendorCode == req->bRequest ) )
+  {
+    pdev->ep0_state = USBD_EP0_SETUP;
+    pdev->ep0_data_len = pdev->request.wLength;
 
+    ret = pdev->pClass->Setup(pdev, req);
+
+    if( (req->wLength == 0) && (ret == USBD_OK) )
+    {
+      USBD_CtlSendStatus(pdev);
+    }
+    return;
+  }
   /* USER CODE END  HAL_PCD_SetupStageCallback_PreTreatment */
   USBD_LL_SetupStage((USBD_HandleTypeDef*)hpcd->pData, (uint8_t *)hpcd->Setup);
   /* USER CODE BEGIN HAL_PCD_SetupStageCallback_PostTreatment */

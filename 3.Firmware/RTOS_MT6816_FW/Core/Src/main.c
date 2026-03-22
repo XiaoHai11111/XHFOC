@@ -48,7 +48,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint64_t serialNumber;
+char serialNumberStr[13];
+__attribute__((section(".ccmram"))) uint8_t ucHeap[configTOTAL_HEAP_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -71,6 +73,19 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  uint32_t uuid0 = *(uint32_t *) (UID_BASE + 0);
+  uint32_t uuid1 = *(uint32_t *) (UID_BASE + 4);
+  uint32_t uuid2 = *(uint32_t *) (UID_BASE + 8);
+  uint32_t uuid_mixed_part = uuid0 + uuid2;
+  serialNumber = ((uint64_t) uuid_mixed_part << 16) | (uint64_t) (uuid1 >> 16);
+
+  uint64_t val = serialNumber;
+  for (size_t i = 0; i < 12; ++i)
+  {
+    serialNumberStr[i] = "0123456789ABCDEF"[(val >> (48 - 4)) & 0xf];
+    val <<= 4;
+  }
+  serialNumberStr[12] = 0;
 
   /* USER CODE END 1 */
 

@@ -22,7 +22,9 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include "cmsis_os.h"
+#include <freertos_inc.h>
+#include "interface_usb.hpp"
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -94,7 +96,11 @@ uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* USER CODE BEGIN PRIVATE_VARIABLES */
+uint8_t CDCRxBufferFS[APP_RX_DATA_SIZE];
+uint8_t REFRxBufferFS[APP_RX_DATA_SIZE];
 
+uint8_t CDCTxBufferFS[APP_TX_DATA_SIZE];
+uint8_t REFTxBufferFS[APP_TX_DATA_SIZE];
 /* USER CODE END PRIVATE_VARIABLES */
 
 /**
@@ -123,10 +129,11 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 
 static int8_t CDC_Init_FS(void);
 static int8_t CDC_DeInit_FS(void);
-static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
-static int8_t CDC_Receive_FS(uint8_t* pbuf, uint32_t *Len);
+// static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
+// static int8_t CDC_Receive_FS(uint8_t* pbuf, uint32_t *Len);
 static int8_t CDC_TransmitCplt_FS(uint8_t *pbuf, uint32_t *Len, uint8_t epnum);
-
+static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
+static int8_t CDC_Receive_FS(uint8_t* pbuf, uint32_t *Len, uint8_t endpoint_pair);
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_DECLARATION */
 
 /* USER CODE END PRIVATE_FUNCTIONS_DECLARATION */
@@ -153,11 +160,23 @@ static int8_t CDC_Init_FS(void)
 {
   /* USER CODE BEGIN 3 */
   /* Set Application Buffers */
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, CDCTxBufferFS, 0, CDC_OUT_EP);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, CDCRxBufferFS, CDC_OUT_EP);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, REFTxBufferFS, 0, ODRIVE_OUT_EP);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, REFRxBufferFS, ODRIVE_OUT_EP);
   return (USBD_OK);
   /* USER CODE END 3 */
 }
+
+// static int8_t CDC_Init_FS(void)
+// {
+//   /* USER CODE BEGIN 3 */
+//   /* Set Application Buffers */
+//   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
+//   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+//   return (USBD_OK);
+//   /* USER CODE END 3 */
+// }
 
 /**
   * @brief  DeInitializes the CDC media low layer
@@ -258,14 +277,23 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   * @param  Len: Number of data received (in bytes)
   * @retval Result of the operation: USBD_OK if all operations are OK else USBD_FAIL
   */
-static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
+// static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
+// {
+//   /* USER CODE BEGIN 6 */
+//   // USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
+//   // USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+//   return (USBD_OK);
+//   /* USER CODE END 6 */
+// }
+static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len, uint8_t endpoint_pair)
 {
   /* USER CODE BEGIN 6 */
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
-  USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+  usb_rx_process_packet(Buf, *Len, endpoint_pair);
+
   return (USBD_OK);
   /* USER CODE END 6 */
 }
+
 
 /**
   * @brief  CDC_Transmit_FS
@@ -278,19 +306,19 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   * @param  Len: Number of data to be sent (in bytes)
   * @retval USBD_OK if all operations are OK else USBD_FAIL or USBD_BUSY
   */
-uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
-{
-  uint8_t result = USBD_OK;
-  /* USER CODE BEGIN 7 */
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-  if (hcdc->TxState != 0){
-    return USBD_BUSY;
-  }
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-  /* USER CODE END 7 */
-  return result;
-}
+// uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
+// {
+//   uint8_t result = USBD_OK;
+//   /* USER CODE BEGIN 7 */
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+//   if (hcdc->TxState != 0){
+//     return USBD_BUSY;
+//   }
+//   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
+//   result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+//   /* USER CODE END 7 */
+//   return result;
+// }
 
 /**
   * @brief  CDC_TransmitCplt_FS
@@ -310,13 +338,75 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   /* USER CODE BEGIN 13 */
   UNUSED(Buf);
   UNUSED(Len);
-  UNUSED(epnum);
+
+  USBD_CDC_HandleTypeDef* hcdc = (USBD_CDC_HandleTypeDef*) hUsbDeviceFS.pClassData;
+  if (hcdc == NULL)
+    return USBD_FAIL;
+
+  // DataIn callback gives EP number without direction bit in most stacks.
+  uint8_t ep = epnum & 0x7FU;
+  uint8_t endpoint_pair;
+  if (ep == (CDC_IN_EP & 0x7FU)) {
+    endpoint_pair = CDC_OUT_EP;
+  } else if (ep == (ODRIVE_IN_EP & 0x7FU)) {
+    endpoint_pair = ODRIVE_OUT_EP;
+  } else {
+    // Ignore non-data endpoints such as CDC_CMD_EP.
+    return USBD_OK;
+  }
+
+  // Select Tx endpoint state exactly like CDC_Transmit_FS().
+  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
+  if (endpoint_pair == CDC_OUT_EP) {
+    hEP_Tx = &hcdc->CDC_Tx;
+  } else if (endpoint_pair == ODRIVE_OUT_EP) {
+    hEP_Tx = &hcdc->REF_Tx;
+  } else {
+    return USBD_FAIL;
+  }
+
+  hEP_Tx->State = 0U;
+  (void)osSemaphoreRelease(sem_usb_tx);
   /* USER CODE END 13 */
   return result;
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len, uint8_t endpoint_pair)
+{
+  uint8_t result = USBD_OK;
+  /* USER CODE BEGIN 7 */
 
+  //Check length
+  if (Len > USB_TX_DATA_SIZE)
+    return USBD_FAIL;
+
+  USBD_CDC_HandleTypeDef* hcdc = (USBD_CDC_HandleTypeDef*) hUsbDeviceFS.pClassData;
+
+  // Select EP
+  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
+  uint8_t* TxBuff;
+  if (endpoint_pair == CDC_OUT_EP) {
+    hEP_Tx = &hcdc->CDC_Tx;
+    TxBuff = CDCTxBufferFS;
+  } else if (endpoint_pair == ODRIVE_OUT_EP) {
+    hEP_Tx = &hcdc->REF_Tx;
+    TxBuff = REFTxBufferFS;
+  } else {
+    return USBD_FAIL;
+  }
+
+  // Check for ongoing transmission
+  if (hEP_Tx->State != 0)
+    return USBD_BUSY;
+  // memcpy Buf into UserTxBufferFS
+  memcpy(TxBuff, Buf, Len);
+  // Update Len
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, TxBuff, Len, endpoint_pair);
+  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, endpoint_pair);
+  /* USER CODE END 7 */
+  return result;
+}
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
 /**

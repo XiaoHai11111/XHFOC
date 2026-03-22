@@ -19,7 +19,7 @@ volatile bool endpointListValid = false;
 osThreadId_t commTaskHandle;
 const osThreadAttr_t commTask_attributes = {
     .name = "commTask",
-    .stack_size = 45000,
+    .stack_size = 1024,
     .priority = (osPriority_t) osPriorityNormal,
 };
 
@@ -32,7 +32,7 @@ void InitCommunication(void)
         osDelay(1);
 }
 
-extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
+extern PCD_HandleTypeDef hpcd_USB_FS;
 osThreadId_t usbIrqTaskHandle;
 
 void UsbDeferredInterruptTask(void* ctx)
@@ -46,9 +46,9 @@ void UsbDeferredInterruptTask(void* ctx)
         if (semaphore_status == osOK)
         {
             // We have a new incoming USB transmission: handle it
-            HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
+            HAL_PCD_IRQHandler(&hpcd_USB_FS);
             // Let the irq (OTG_FS_IRQHandler) fire again.
-            HAL_NVIC_EnableIRQ(OTG_FS_IRQn);
+            HAL_NVIC_EnableIRQ(USB_LP_IRQn);
         }
     }
 }

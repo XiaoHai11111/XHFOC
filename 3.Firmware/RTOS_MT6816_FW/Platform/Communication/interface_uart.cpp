@@ -18,10 +18,10 @@ static uint32_t dma_last_rcv_idx[2];
 osThreadId_t uartServerTaskHandle;
 
 
-class UART1Sender : public StreamSink
+class UART3Sender : public StreamSink
 {
 public:
-    UART1Sender()
+    UART3Sender()
     {
         channelType = CHANNEL_TYPE_UART1;
     }
@@ -35,11 +35,11 @@ public:
             // wait for USB interface to become ready
             // TODO: implement ring buffer to get a more continuous stream of data
             // if (osSemaphoreWait(sem_uart_dma, deadline_to_timeout(deadline_ms)) != osOK)
-            if (osSemaphoreAcquire(sem_uart1_dma, PROTOCOL_SERVER_TIMEOUT_MS) != osOK)
+            if (osSemaphoreAcquire(sem_uart3_dma, PROTOCOL_SERVER_TIMEOUT_MS) != osOK)
                 return -1;
             // transmit chunk
             memcpy(tx_buf_, buffer, chunk);
-            if (HAL_UART_Transmit_DMA(&huart1, tx_buf_, chunk) != HAL_OK)
+            if (HAL_UART_Transmit_DMA(&huart3, tx_buf_, chunk) != HAL_OK)
                 return -1;
             buffer += chunk;
             length -= chunk;
@@ -68,13 +68,13 @@ static void UartServerTask(void* ctx)
     for (;;)
     {
         // Check for UART errors and restart recieve DMA transfer if required
-        if (huart1.ErrorCode != HAL_UART_ERROR_NONE)
+        if (huart3.ErrorCode != HAL_UART_ERROR_NONE)
         {
-            HAL_UART_AbortReceive(&huart1);
-            HAL_UART_Receive_DMA(&huart1, dma_rx_buffer[0], sizeof(dma_rx_buffer[0]));
+            HAL_UART_AbortReceive(&huart3);
+            HAL_UART_Receive_DMA(&huart3, dma_rx_buffer[0], sizeof(dma_rx_buffer[0]));
         }
         // Fetch the circular buffer "write pointer", where it would write next
-        uint32_t new_rcv_idx = UART_RX_BUFFER_SIZE - huart1.hdmarx->Instance->NDTR;
+        uint32_t new_rcv_idx = UART_RX_BUFFER_SIZE - huart3.hdmarx->Instance->CNDTR;
 
         // deadline_ms = timeout_to_deadline(PROTOCOL_SERVER_TIMEOUT_MS);
         // Process bytes in one or two chunks (two in case there was a wrap)
@@ -112,8 +112,8 @@ void StartUartServer()
     // DMA is set up to receive in a circular buffer forever.
     // We don't use interrupts to fetch the data, instead we periodically read
     // data out of the circular buffer into a parse buffer, controlled by a state machine
-    HAL_UART_Receive_DMA(&huart1, dma_rx_buffer[0], sizeof(dma_rx_buffer[0]));
-    dma_last_rcv_idx[0] = UART_RX_BUFFER_SIZE - huart1.hdmarx->Instance->NDTR;
+    HAL_UART_Receive_DMA(&huart3, dma_rx_buffer[0], sizeof(dma_rx_buffer[0]));
+    dma_last_rcv_idx[0] = UART_RX_BUFFER_SIZE - huart3.hdmarx->Instance->CNDTR;
 
     // Start UART communication thread
     uartServerTaskHandle = osThreadNew(UartServerTask, nullptr, &uartServerTask_attributes);
@@ -121,6 +121,6 @@ void StartUartServer()
 
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef* huart)
 {
-    if (huart->Instance == USART1)
-        osSemaphoreRelease(sem_uart1_dma);
+    if (huart->Instance == USART3)
+        osSemaphoreRelease(sem_uart3_dma);
 }

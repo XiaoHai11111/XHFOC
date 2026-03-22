@@ -45,11 +45,25 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+        3rdParty/fibre/protocol.cpp
+        Platform/CmdCtrlMotor/cmd_ctrl_motor.cpp
+        Platform/Communication/ascii_processor.cpp
+        Platform/Communication/communication.cpp
+        Platform/Communication/interface_uart.cpp
+        Platform/Communication/interface_usb.cpp
+        UserApp/main.cpp
+        UserApp/protocols/ascii_protocol.cpp
+        UserApp/protocols/cmd_protocol.cpp
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+        3rdParty/fibre/include
+        Platform/CmdCtrlMotor
+        Platform/Communication
+        UserApp
+        UserApp/protocols
 )
 
 # Add project symbols (macros)
