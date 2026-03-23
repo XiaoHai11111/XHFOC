@@ -162,8 +162,6 @@ static int8_t CDC_Init_FS(void)
   /* Set Application Buffers */
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, CDCTxBufferFS, 0, CDC_OUT_EP);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, CDCRxBufferFS, CDC_OUT_EP);
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, REFTxBufferFS, 0, ODRIVE_OUT_EP);
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, REFRxBufferFS, ODRIVE_OUT_EP);
   return (USBD_OK);
   /* USER CODE END 3 */
 }
@@ -343,30 +341,12 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   if (hcdc == NULL)
     return USBD_FAIL;
 
-  // DataIn callback gives EP number without direction bit in most stacks.
-  uint8_t ep = epnum & 0x7FU;
-  uint8_t endpoint_pair;
-  if (ep == (CDC_IN_EP & 0x7FU)) {
-    endpoint_pair = CDC_OUT_EP;
-  } else if (ep == (ODRIVE_IN_EP & 0x7FU)) {
-    endpoint_pair = ODRIVE_OUT_EP;
-  } else {
-    // Ignore non-data endpoints such as CDC_CMD_EP.
+  // Single-endpoint mode: only release TX token on CDC data endpoint completion.
+  if ((epnum & 0x7FU) != (CDC_IN_EP & 0x7FU))
     return USBD_OK;
-  }
 
-  // Select Tx endpoint state exactly like CDC_Transmit_FS().
-  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
-  if (endpoint_pair == CDC_OUT_EP) {
-    hEP_Tx = &hcdc->CDC_Tx;
-  } else if (endpoint_pair == ODRIVE_OUT_EP) {
-    hEP_Tx = &hcdc->REF_Tx;
-  } else {
-    return USBD_FAIL;
-  }
-
-  hEP_Tx->State = 0U;
-  (void)osSemaphoreRelease(sem_usb_tx);
+  hcdc->CDC_Tx.State = 0U;
+  (void) osSemaphoreRelease(sem_usb_tx);
   /* USER CODE END 13 */
   return result;
 }
@@ -376,34 +356,24 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len, uint8_t endpoint_pair)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 7 */
+  (void) endpoint_pair; // Single-endpoint mode: force all traffic to CDC endpoint pair.
 
   //Check length
   if (Len > USB_TX_DATA_SIZE)
     return USBD_FAIL;
 
   USBD_CDC_HandleTypeDef* hcdc = (USBD_CDC_HandleTypeDef*) hUsbDeviceFS.pClassData;
-
-  // Select EP
-  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
-  uint8_t* TxBuff;
-  if (endpoint_pair == CDC_OUT_EP) {
-    hEP_Tx = &hcdc->CDC_Tx;
-    TxBuff = CDCTxBufferFS;
-  } else if (endpoint_pair == ODRIVE_OUT_EP) {
-    hEP_Tx = &hcdc->REF_Tx;
-    TxBuff = REFTxBufferFS;
-  } else {
+  if (hcdc == NULL)
     return USBD_FAIL;
-  }
 
   // Check for ongoing transmission
-  if (hEP_Tx->State != 0)
+  if (hcdc->CDC_Tx.State != 0)
     return USBD_BUSY;
   // memcpy Buf into UserTxBufferFS
-  memcpy(TxBuff, Buf, Len);
+  memcpy(CDCTxBufferFS, Buf, Len);
   // Update Len
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, TxBuff, Len, endpoint_pair);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, endpoint_pair);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, CDCTxBufferFS, Len, CDC_OUT_EP);
+  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, CDC_OUT_EP);
   /* USER CODE END 7 */
   return result;
 }

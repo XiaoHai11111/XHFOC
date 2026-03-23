@@ -20,21 +20,25 @@ public:
         // cannot send partial packets
         if (length > USB_TX_DATA_SIZE)
             return -1;
-        // wait for USB interface to become ready
-        if (osSemaphoreAcquire(sem_usb_tx_, PROTOCOL_SERVER_TIMEOUT_MS) != osOK)
+        // wait for USB interface to become ready (lossless mode: don't drop on timeout)
+        (void)osSemaphoreAcquire(sem_usb_tx_, osWaitForever);
+
+        // transmit packet (retry transient BUSY for a longer window to avoid response drops)
+        uint8_t status = USBD_BUSY;
+        for (size_t retry = 0; retry < 100; ++retry)
         {
-            // If the host resets the device it might be that the TX-complete handler is never called
-            // and the sem_usb_tx_ semaphore is never released. To handle this we just override the
-            // TX buffer if this wait times out. The implication is that the channel is no longer lossless.
-            // TODO: handle endpoint reset properly
-            usb_stats_.tx_overrun_cnt++;
+            status = CDC_Transmit_FS(const_cast<uint8_t *>(buffer), length, endpoint_pair_);
+            if (status == USBD_OK)
+                break;
+            if (status != USBD_BUSY)
+                break;
+            osDelay(1);
         }
 
-        // transmit packet
-        uint8_t status = CDC_Transmit_FS(const_cast<uint8_t *>(buffer), length, endpoint_pair_);
         if (status != USBD_OK)
         {
             osSemaphoreRelease(sem_usb_tx_);
+            usb_stats_.tx_overrun_cnt++;
             return -1;
         }
         usb_stats_.tx_cnt++;
@@ -65,7 +69,7 @@ public:
         while (length)
         {
             size_t chunk = length < USB_TX_DATA_SIZE ? length : USB_TX_DATA_SIZE;
-            if (output_.process_packet(buffer, length) != 0)
+            if (output_.process_packet(buffer, chunk) != 0)
                 return -1;
             buffer += chunk;
             length -= chunk;

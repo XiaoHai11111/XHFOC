@@ -160,6 +160,7 @@ public:
     {
         CHANNEL_TYPE_USB,
         CHANNEL_TYPE_UART1,
+        CHANNEL_TYPE_UART3,
         CHANNEL_TYPE_UART4,
         CHANNEL_TYPE_UART5
     };

@@ -23,7 +23,7 @@ class UART3Sender : public StreamSink
 public:
     UART3Sender()
     {
-        channelType = CHANNEL_TYPE_UART1;
+        channelType = CHANNEL_TYPE_UART3;
     }
 
     int process_bytes(const uint8_t* buffer, size_t length, size_t* processed_bytes) override
@@ -54,12 +54,12 @@ public:
 
 private:
     uint8_t tx_buf_[UART_TX_BUFFER_SIZE];
-} uart1_stream_output;
+} uart3_stream_output;
 
-StreamSink* uart1StreamOutputPtr = &uart1_stream_output;
-StreamBasedPacketSink uart1_packet_output(uart1_stream_output);
-BidirectionalPacketBasedChannel uart1_channel(uart1_packet_output);
-StreamToPacketSegmenter uart1_stream_input(uart1_channel);
+StreamSink* uart3StreamOutputPtr = &uart3_stream_output;
+StreamBasedPacketSink uart3_packet_output(uart3_stream_output);
+BidirectionalPacketBasedChannel uart3_channel(uart3_packet_output);
+StreamToPacketSegmenter uart3_stream_input(uart3_channel);
 
 static void UartServerTask(void* ctx)
 {
@@ -80,20 +80,20 @@ static void UartServerTask(void* ctx)
         // Process bytes in one or two chunks (two in case there was a wrap)
         if (new_rcv_idx < dma_last_rcv_idx[0])
         {
-            uart1_stream_input.process_bytes(dma_rx_buffer[0] + dma_last_rcv_idx[0],
+            uart3_stream_input.process_bytes(dma_rx_buffer[0] + dma_last_rcv_idx[0],
                                              UART_RX_BUFFER_SIZE - dma_last_rcv_idx[0],
                                              nullptr); // TODO: use process_all
             ASCII_protocol_parse_stream(dma_rx_buffer[0] + dma_last_rcv_idx[0],
-                                        UART_RX_BUFFER_SIZE - dma_last_rcv_idx[0], uart1_stream_output);
+                                        UART_RX_BUFFER_SIZE - dma_last_rcv_idx[0], uart3_stream_output);
             dma_last_rcv_idx[0] = 0;
         }
         if (new_rcv_idx > dma_last_rcv_idx[0])
         {
-            uart1_stream_input.process_bytes(dma_rx_buffer[0] + dma_last_rcv_idx[0],
+            uart3_stream_input.process_bytes(dma_rx_buffer[0] + dma_last_rcv_idx[0],
                                              new_rcv_idx - dma_last_rcv_idx[0],
                                              nullptr); // TODO: use process_all
             ASCII_protocol_parse_stream(dma_rx_buffer[0] + dma_last_rcv_idx[0],
-                                        new_rcv_idx - dma_last_rcv_idx[0], uart1_stream_output);
+                                        new_rcv_idx - dma_last_rcv_idx[0], uart3_stream_output);
             dma_last_rcv_idx[0] = new_rcv_idx;
         }
 

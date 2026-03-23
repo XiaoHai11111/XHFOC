@@ -92,8 +92,8 @@ void MX_FREERTOS_Init(void) {
   sem_usb_irq = osSemaphoreNew(1, 0, osSemaphore(sem_usb_irq));
 
   // Create a semaphore for UART DMA and remove a token
-  osSemaphoreDef(sem_uart1_dma);
-  sem_uart3_dma = osSemaphoreNew(1, 1, osSemaphore(sem_uart1_dma));
+  osSemaphoreDef(sem_uart3_dma);
+  sem_uart3_dma = osSemaphoreNew(1, 1, osSemaphore(sem_uart3_dma));
 
   // Create a semaphore for USB RX, and start with no tokens by removing the starting one.
   osSemaphoreDef(sem_usb_rx);

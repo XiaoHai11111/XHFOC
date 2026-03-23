@@ -5,7 +5,7 @@
 
 #include "protocol.hpp"
 
-extern StreamSink *uart1StreamOutputPtr;
+extern StreamSink *uart3StreamOutputPtr;
 
 extern "C" {
 #endif

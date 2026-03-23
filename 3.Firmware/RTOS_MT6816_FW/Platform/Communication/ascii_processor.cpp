@@ -39,23 +39,37 @@ void ASCII_protocol_process_line(const uint8_t* buffer, size_t len, StreamSink &
 
     if (response_channel.channelType == StreamSink::CHANNEL_TYPE_USB)
         OnUsbAsciiCmd(cmd, len, response_channel);
-    else if (response_channel.channelType == StreamSink::CHANNEL_TYPE_UART1)
-        OnUart1AsciiCmd(cmd, len, response_channel);
+    else if (response_channel.channelType == StreamSink::CHANNEL_TYPE_UART3)
+        OnUart3AsciiCmd(cmd, len, response_channel);
 }
 
 void ASCII_protocol_parse_stream(const uint8_t* buffer, size_t len, StreamSink &response_channel)
 {
-    static uint8_t parse_buffer[MAX_LINE_LENGTH];
-    static bool read_active = true;
-    static uint32_t parse_buffer_idx = 0;
+    struct AsciiParseState {
+        uint8_t parse_buffer[MAX_LINE_LENGTH];
+        bool initialized;
+        bool read_active;
+        uint32_t parse_buffer_idx;
+    };
+    static AsciiParseState parse_states[StreamSink::CHANNEL_TYPE_UART5 + 1] = {};
+
+    uint32_t channel_idx = static_cast<uint32_t>(response_channel.channelType);
+    if (channel_idx > static_cast<uint32_t>(StreamSink::CHANNEL_TYPE_UART5)) {
+        channel_idx = static_cast<uint32_t>(StreamSink::CHANNEL_TYPE_USB);
+    }
+    AsciiParseState &state = parse_states[channel_idx];
+    if (!state.initialized) {
+        state.initialized = true;
+        state.read_active = true;
+    }
 
     while (len--)
     {
         // if the line becomes too long, reset buffer and wait for the next line
-        if (parse_buffer_idx >= MAX_LINE_LENGTH)
+        if (state.parse_buffer_idx >= MAX_LINE_LENGTH)
         {
-            read_active = false;
-            parse_buffer_idx = 0;
+            state.read_active = false;
+            state.parse_buffer_idx = 0;
         }
 
         // Fetch the next char
@@ -63,15 +77,15 @@ void ASCII_protocol_parse_stream(const uint8_t* buffer, size_t len, StreamSink &
         bool is_end_of_line = (c == '\r' || c == '\n');
         if (is_end_of_line)
         {
-            if (read_active)
-                ASCII_protocol_process_line(parse_buffer, parse_buffer_idx, response_channel);
-            parse_buffer_idx = 0;
-            read_active = true;
+            if (state.read_active)
+                ASCII_protocol_process_line(state.parse_buffer, state.parse_buffer_idx, response_channel);
+            state.parse_buffer_idx = 0;
+            state.read_active = true;
         } else
         {
-            if (read_active)
+            if (state.read_active)
             {
-                parse_buffer[parse_buffer_idx++] = c;
+                state.parse_buffer[state.parse_buffer_idx++] = c;
             }
         }
     }

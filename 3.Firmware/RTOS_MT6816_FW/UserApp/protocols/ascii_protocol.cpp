@@ -24,7 +24,7 @@ void OnUsbAsciiCmd(const char* _cmd, size_t _len, StreamSink &_responseChannel)
 }
 
 
-void OnUart1AsciiCmd(const char* _cmd, size_t _len, StreamSink &_responseChannel)
+void OnUart3AsciiCmd(const char* _cmd, size_t _len, StreamSink &_responseChannel)
 {
     /*---------------------------- ↓ Add Your CMDs Here ↓ -----------------------------*/
     if (_cmd[0] == '!')
@@ -40,6 +40,8 @@ void OnUart1AsciiCmd(const char* _cmd, size_t _len, StreamSink &_responseChannel
         {
             Respond(_responseChannel, "Disabled ok");
         }
+    }else {
+        Respond(_responseChannel, "Invalid command");
     }
 /*---------------------------- ↑ Add Your CMDs Here ↑ -----------------------------*/
 }
