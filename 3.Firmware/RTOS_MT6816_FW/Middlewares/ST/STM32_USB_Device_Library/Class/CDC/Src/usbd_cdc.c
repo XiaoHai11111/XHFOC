@@ -524,17 +524,21 @@ static uint8_t USBD_CDC_Init(USBD_HandleTypeDef *pdev, uint8_t cfgidx)
   /* Init Xfer states */
   hcdc->TxState = 0U;
   hcdc->RxState = 0U;
+  hcdc->CDC_Tx.State = 0U;
+  hcdc->CDC_Rx.State = 0U;
+  hcdc->REF_Tx.State = 0U;
+  hcdc->ODRIVE_Rx.State = 0U;
 
   if (pdev->dev_speed == USBD_SPEED_HIGH)
   {
     /* Prepare Out endpoint to receive next packet */
-    (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->RxBuffer,
+    (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->CDC_Rx.Buffer,
                                  CDC_DATA_HS_OUT_PACKET_SIZE);
   }
   else
   {
     /* Prepare Out endpoint to receive next packet */
-    (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->RxBuffer,
+    (void)USBD_LL_PrepareReceive(pdev, CDC_OUT_EP, hcdc->CDC_Rx.Buffer,
                                  CDC_DATA_FS_OUT_PACKET_SIZE);
   }
 
@@ -917,6 +921,10 @@ uint8_t  USBD_CDC_SetTxBuffer  (USBD_HandleTypeDef   *pdev,
 
   hEP_Tx->Buffer = pbuff;
   hEP_Tx->Length = length;
+  if (endpoint_pair == CDC_OUT_EP) {
+    hcdc->TxBuffer = pbuff;
+    hcdc->TxLength = length;
+  }
 
   return USBD_OK;
 }
@@ -1015,6 +1023,9 @@ uint8_t  USBD_CDC_TransmitPacket(USBD_HandleTypeDef *pdev, uint8_t endpoint_pair
     {
       /* Tx Transfer in progress */
       hEP_Tx->State = 1;
+      pdev->ep_in[in_ep & 0xFU].total_length = hEP_Tx->Length;
+      hcdc->TxBuffer = hEP_Tx->Buffer;
+      hcdc->TxLength = hEP_Tx->Length;
 
       /* Transmit next packet */
       USBD_LL_Transmit(pdev,
