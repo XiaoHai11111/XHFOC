@@ -1,3 +1,6 @@
+#Vscode
+/.vscode
+
 #RTOS_MT6816_FW
 /3.Firmware/RTOS_MT6816_FW/USB_Uart_Cmd
 /3.Firmware/RTOS_MT6816_FW/.idea
@@ -9,3 +12,9 @@
 /3.Firmware/UART_TEST_FW/.idea
 /3.Firmware/UART_TEST_FW/cmake-build-debug-mingw_stm32
 /3.Firmware/UART_TEST_FW/build
+
+
+#CLI-Tool
+/4.Software/CLI-Tool/.idea
+/4.Software/CLI-Tool/.ipython
+/4.Software/CLI-Tool/venv
