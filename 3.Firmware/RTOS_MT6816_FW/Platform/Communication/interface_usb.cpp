@@ -130,7 +130,7 @@ static void UsbServerTask(void *ctx)
 
     for (;;)
     {
-        // const uint32_t usb_check_timeout = 1; // ms
+        // Keep OUT endpoints armed even if an early transfer was missed after re-enumeration.
         osStatus sem_stat = osSemaphoreAcquire(sem_usb_rx, osWaitForever);
         if (sem_stat == osOK)
         {
@@ -151,6 +151,14 @@ static void UsbServerTask(void *ctx)
                 ODrive_interface.data_pending = false;
                 usb_channel.process_packet(ODrive_interface.rx_buf, ODrive_interface.rx_len);
                 USBD_CDC_ReceivePacket(&hUsbDeviceFS, ODrive_interface.out_ep);  // Allow next packet
+            }
+        }
+        else
+        {
+            if (hUsbDeviceFS.pClassData != nullptr)
+            {
+                (void)USBD_CDC_ReceivePacket(&hUsbDeviceFS, CDC_interface.out_ep);
+                (void)USBD_CDC_ReceivePacket(&hUsbDeviceFS, ODrive_interface.out_ep);
             }
         }
     }

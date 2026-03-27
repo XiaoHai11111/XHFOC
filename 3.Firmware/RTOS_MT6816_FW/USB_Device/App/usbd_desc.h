@@ -66,6 +66,9 @@
   */
 
 /* USER CODE BEGIN EXPORTED_DEFINES */
+#define USBD_IDX_MICROSOFT_DESC_STR       0xEEU
+/* Custom interface string index (optional, keep reserved for compatibility). */
+#define USBD_IDX_REF_INTF_STR             0x06U
 
 /* USER CODE END EXPORTED_DEFINES */
 
@@ -120,6 +123,7 @@ extern USBD_DescriptorsTypeDef     CDC_Desc;
   */
 
 /* USER CODE BEGIN EXPORTED_FUNCTIONS */
+uint8_t * USBD_UsrStrDescriptor(struct _USBD_HandleTypeDef *pdev, uint8_t index, uint16_t *length);
 
 /* USER CODE END EXPORTED_FUNCTIONS */
 

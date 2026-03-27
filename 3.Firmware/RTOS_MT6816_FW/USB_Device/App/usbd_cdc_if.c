@@ -162,6 +162,8 @@ static int8_t CDC_Init_FS(void)
   /* Set Application Buffers */
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, CDCTxBufferFS, 0, CDC_OUT_EP);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, CDCRxBufferFS, CDC_OUT_EP);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, REFTxBufferFS, 0, ODRIVE_OUT_EP);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, REFRxBufferFS, ODRIVE_OUT_EP);
   return (USBD_OK);
   /* USER CODE END 3 */
 }
@@ -341,11 +343,20 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   if (hcdc == NULL)
     return USBD_FAIL;
 
-  // Single-endpoint mode: only release TX token on CDC data endpoint completion.
-  if ((epnum & 0x7FU) != (CDC_IN_EP & 0x7FU))
+  // NOTE: In this stack, DataIn callback epnum uses endpoint number (1/3), not 0x81/0x83.
+  if ((epnum & 0x7FU) == (CDC_OUT_EP & 0x7FU))
+  {
+    hcdc->CDC_Tx.State = 0U;
+  }
+  else if ((epnum & 0x7FU) == (ODRIVE_OUT_EP & 0x7FU))
+  {
+    hcdc->REF_Tx.State = 0U;
+  }
+  else
+  {
     return USBD_OK;
+  }
 
-  hcdc->CDC_Tx.State = 0U;
   (void) osSemaphoreRelease(sem_usb_tx);
   /* USER CODE END 13 */
   return result;
@@ -356,8 +367,6 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len, uint8_t endpoint_pair)
 {
   uint8_t result = USBD_OK;
   /* USER CODE BEGIN 7 */
-  (void) endpoint_pair; // Single-endpoint mode: force all traffic to CDC endpoint pair.
-
   //Check length
   if (Len > USB_TX_DATA_SIZE)
     return USBD_FAIL;
@@ -366,14 +375,32 @@ uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len, uint8_t endpoint_pair)
   if (hcdc == NULL)
     return USBD_FAIL;
 
+  // Select endpoint pair and software TX buffer
+  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
+  uint8_t* tx_buff;
+  if (endpoint_pair == CDC_OUT_EP)
+  {
+    hEP_Tx = &hcdc->CDC_Tx;
+    tx_buff = CDCTxBufferFS;
+  }
+  else if (endpoint_pair == ODRIVE_OUT_EP)
+  {
+    hEP_Tx = &hcdc->REF_Tx;
+    tx_buff = REFTxBufferFS;
+  }
+  else
+  {
+    return USBD_FAIL;
+  }
+
   // Check for ongoing transmission
-  if (hcdc->CDC_Tx.State != 0)
+  if (hEP_Tx->State != 0)
     return USBD_BUSY;
-  // memcpy Buf into UserTxBufferFS
-  memcpy(CDCTxBufferFS, Buf, Len);
-  // Update Len
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, CDCTxBufferFS, Len, CDC_OUT_EP);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, CDC_OUT_EP);
+
+  // memcpy payload to endpoint dedicated TX buffer
+  memcpy(tx_buff, Buf, Len);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, tx_buff, Len, endpoint_pair);
+  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, endpoint_pair);
   /* USER CODE END 7 */
   return result;
 }
