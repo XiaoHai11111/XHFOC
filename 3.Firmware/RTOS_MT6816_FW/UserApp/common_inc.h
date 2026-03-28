@@ -12,6 +12,7 @@ extern "C" {
 #include "FreeRTOS.h"
 #include "task.h"
 #include "main.h"
+#include "spi.h"
 #include "cmsis_os.h"
 #include "freertos_inc.h"
 
@@ -28,5 +29,6 @@ extern char serialNumberStr[13];
 /*---------------------------- C++ Scope ---------------------------*/
 #include "communication.hpp"
 #include "protocol.hpp"
+//#include "Ctr"
 #endif
 #endif //REF_STM32F4_COMMON_INC_H

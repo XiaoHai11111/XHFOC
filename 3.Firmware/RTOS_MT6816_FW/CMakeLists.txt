@@ -46,11 +46,21 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
         3rdParty/fibre/protocol.cpp
+
+        Ctrl/Sensor/Encoder/mt6816_base.cpp
+        Ctrl/Signal/LED/led_base.cpp
+        Ctrl/Motor/motor.cpp
+        Ctrl/Motor/math_utils.cpp
+
         Platform/CmdCtrlMotor/cmd_ctrl_motor.cpp
         Platform/Communication/ascii_processor.cpp
         Platform/Communication/communication.cpp
         Platform/Communication/interface_uart.cpp
         Platform/Communication/interface_usb.cpp
+        Platform/Sensor/Encoder/mt6816_stm32.cpp
+        Platform/Signal/LED/led_stm32.cpp
+        Platform/Memory/random_flash_utils.cpp
+
         UserApp/main.cpp
         UserApp/protocols/ascii_protocol.cpp
         UserApp/protocols/cmd_protocol.cpp
@@ -60,10 +70,20 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
         3rdParty/fibre/include
+
+        Ctrl/Sensor/Encoder
+        Ctrl/Signal/LED
+        Ctrl/Motor
+
         Platform/CmdCtrlMotor
         Platform/Communication
+        Platform/Sensor/Encoder
+        Platform/Signal/LED
+        Platform/Memory
+
         UserApp
         UserApp/protocols
+
 )
 
 # Add project symbols (macros)

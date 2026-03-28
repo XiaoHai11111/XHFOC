@@ -40,8 +40,6 @@ void OnUart3AsciiCmd(const char* _cmd, size_t _len, StreamSink &_responseChannel
         {
             Respond(_responseChannel, "Disabled ok");
         }
-    }else {
-        Respond(_responseChannel, "Invalid command");
     }
 /*---------------------------- ↑ Add Your CMDs Here ↑ -----------------------------*/
 }

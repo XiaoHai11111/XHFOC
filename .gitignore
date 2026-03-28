@@ -6,7 +6,8 @@
 /3.Firmware/RTOS_MT6816_FW/.idea
 /3.Firmware/RTOS_MT6816_FW/cmake-build-debug-mingw_stm32
 /3.Firmware/RTOS_MT6816_FW/build
-
+/3.Firmware/RTOS_MT6816_FW/HelloWord-Dynamic-fw
+/3.Firmware/RTOS_MT6816_FW/Ctrl-Step-Driver-STM32F1-fw
 
 #UART_TEST_FW
 /3.Firmware/UART_TEST_FW/.idea
