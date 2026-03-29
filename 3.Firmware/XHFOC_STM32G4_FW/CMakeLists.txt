@@ -56,6 +56,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Ctrl/Sensor/CurrentSense/Instances/low_side_current_sense.cpp
     Ctrl/Sensor/Encoder/mt6816_base.cpp
     Ctrl/Sensor/NtcSense/ntc_sense_base.cpp
+    Ctrl/Signal/KEY/key_base.cpp
     Ctrl/Signal/LED/led_base.cpp
 
     Platform/CmdCtrlMotor/cmd_ctrl_motor.cpp
@@ -69,6 +70,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Sensor/Encoder/mt6816_stm32.cpp
     Platform/Sensor/NtcSense/ntc_sense.cpp
     Platform/Sensor/VoltageSense/voltage_sense.cpp
+    Platform/Signal/KEY/key_stm32.cpp
     Platform/Signal/LED/led_stm32.cpp
 
     UserApp/main.cpp
@@ -88,6 +90,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Ctrl/Sensor/Encoder
     Ctrl/Sensor/NtcSense
     Ctrl/Sensor/VoltageSense
+    Ctrl/Signal/KEY
     Ctrl/Signal/LED
 
     Platform/CmdCtrlMotor
@@ -98,6 +101,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Sensor/Encoder
     Platform/Sensor/NtcSense
     Platform/Sensor/VoltageSense
+    Platform/Signal/KEY
     Platform/Signal/LED
 
     UserApp

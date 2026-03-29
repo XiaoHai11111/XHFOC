@@ -4,6 +4,7 @@
 #include "motor.h"
 #include "mt6816_stm32.h"
 #include "led_stm32.h"
+#include "key_stm32.h"
 #include "current_sense.h"
 #include "voltage_sense.h"
 #include "adspe_sense.h"
@@ -18,6 +19,10 @@ CurrentSense currentSense(0.001f, 20.0f);
 VoltageSense voltageSense;
 AdspeSense adspeSense;
 NtcSense ntcSense;
+Key key1(1,20,250,800);
+Key key2(2,20,250,800);
+Key key3(3,20,250,800);
+Key key4(4,20,250,800);
 
 osThreadId_t mt6816TaskHandle;
 osThreadId_t peripheralTaskHandle;
@@ -52,6 +57,22 @@ static long AbsLong(long v)
     return (v < 0) ? -v : v;
 }
 
+static const char* KeyEventToString(KeyBase::Event event)
+{
+    switch (event)
+    {
+        case KeyBase::EVENT_SINGLE_CLICK: return "single";
+        case KeyBase::EVENT_DOUBLE_CLICK: return "double";
+        case KeyBase::EVENT_LONG_PRESS: return "long";
+        default: return "unknown";
+    }
+}
+
+static void OnKeyEvent(uint8_t keyId, KeyBase::Event event)
+{
+    Respond(*usbStreamOutputPtr, "[key] KEY%u %s", keyId, KeyEventToString(event));
+}
+
 static void ThreadMT6816(void* argument)
 {
     (void)argument;
@@ -81,14 +102,36 @@ static void ThreadPeripheral(void* argument)
 {
     (void)argument;
 
-    constexpr uint32_t kTickMs = 50U;
+    constexpr uint32_t kTickMs = 10U;
+    constexpr uint32_t kLedTickMs = 50U;
     constexpr uint32_t kStateHoldMs = 5000U;
     uint32_t elapsedInState = 0;
+    uint32_t elapsedForLed = 0;
     Motor::RunState_t currentState = Motor::STATE_STOP;
+
+    key1.SetOnEventListener(OnKeyEvent);
+    key2.SetOnEventListener(OnKeyEvent);
+    key3.SetOnEventListener(OnKeyEvent);
+    key4.SetOnEventListener(OnKeyEvent);
+
+    key1.Init();
+    key2.Init();
+    key3.Init();
+    key4.Init();
 
     for (;;)
     {
-        statusLed.Tick(kTickMs, currentState);
+        key1.Tick(kTickMs);
+        key2.Tick(kTickMs);
+        key3.Tick(kTickMs);
+        key4.Tick(kTickMs);
+
+        elapsedForLed += kTickMs;
+        if (elapsedForLed >= kLedTickMs)
+        {
+            elapsedForLed = 0;
+            statusLed.Tick(kLedTickMs, currentState);
+        }
 
         elapsedInState += kTickMs;
         if (elapsedInState >= kStateHoldMs)
@@ -159,16 +202,16 @@ void Main(void)
             (unsigned) xPortGetFreeHeapSize(),
             (unsigned) xPortGetMinimumEverFreeHeapSize());
 
-    const osThreadAttr_t mt6816Task_attributes = {
-        .name = "mt6816Task",
-        .stack_size = 1024,
-        .priority = (osPriority_t)osPriorityBelowNormal,
-    };
-    mt6816TaskHandle = osThreadNew(ThreadMT6816, nullptr, &mt6816Task_attributes);
-    if (mt6816TaskHandle == nullptr)
-    {
-        ReportTaskCreateFailure("mt6816Task");
-    }
+    // const osThreadAttr_t mt6816Task_attributes = {
+    //     .name = "mt6816Task",
+    //     .stack_size = 1024,
+    //     .priority = (osPriority_t)osPriorityBelowNormal,
+    // };
+    // mt6816TaskHandle = osThreadNew(ThreadMT6816, nullptr, &mt6816Task_attributes);
+    // if (mt6816TaskHandle == nullptr)
+    // {
+    //     ReportTaskCreateFailure("mt6816Task");
+    // }
 
     const osThreadAttr_t peripheralTask_attributes = {
         .name = "peripheralTask",
@@ -181,14 +224,14 @@ void Main(void)
         ReportTaskCreateFailure("peripheralTask");
     }
 
-    const osThreadAttr_t adcMonitorTask_attributes = {
-        .name = "adcMonitorTask",
-        .stack_size = 2048,
-        .priority = (osPriority_t)osPriorityLow,
-    };
-    adcMonitorTaskHandle = osThreadNew(ThreadAdcMonitor, nullptr, &adcMonitorTask_attributes);
-    if (adcMonitorTaskHandle == nullptr)
-    {
-        ReportTaskCreateFailure("adcMonitorTask");
-    }
+    // const osThreadAttr_t adcMonitorTask_attributes = {
+    //     .name = "adcMonitorTask",
+    //     .stack_size = 2048,
+    //     .priority = (osPriority_t)osPriorityLow,
+    // };
+    // adcMonitorTaskHandle = osThreadNew(ThreadAdcMonitor, nullptr, &adcMonitorTask_attributes);
+    // if (adcMonitorTaskHandle == nullptr)
+    // {
+    //     ReportTaskCreateFailure("adcMonitorTask");
+    // }
 }

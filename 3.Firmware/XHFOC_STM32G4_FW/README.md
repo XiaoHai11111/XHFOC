@@ -123,6 +123,93 @@
   - 先读入 RAM 缓冲，再按需写回 Flash，降低擦写频次。
   - 为参数持久化（标定值、运行参数）预留统一接口。
 
+### ADC采样移植技术路线（补充）
+
+####  目标与分层
+
+- 目标：完成 9 路模拟量统一采样与上层接口统一读取，并用于通信输出与后续控制闭环。
+- 分层结构：
+  - `Core/Src/adc.c`：底层 ADC1/ADC2 配置、DMA 循环搬运、统一 raw/voltage 接口。
+  - `Ctrl/Sensor/*Sense`：传感器算法抽象层（电流/电压/ADSPE/NTC）。
+  - `Platform/Sensor/*Sense`：STM32 平台适配层（通道映射、读取与换算）。
+  - `UserApp/main.cpp`：任务中调用采样接口并通过 USB CDC 打印。
+
+####  通道映射与采样链路
+
+- ADC1（规则组 + DMA循环）：
+  - Rank1: IA (`ADC1_IN1`)
+  - Rank2: IB (`ADC1_IN2`)
+  - Rank3: IC (`ADC1_IN3`)
+  - Rank4: NTC (`ADC1_IN11`)
+- ADC2（规则组 + DMA循环）：
+  - Rank1: VA (`ADC2_IN6`)
+  - Rank2: VB (`ADC2_IN7`)
+  - Rank3: VC (`ADC2_IN8`)
+  - Rank4: ADSPE (`ADC2_IN5`)
+  - Rank5: VBUS (`ADC2_IN11`)
+- 运行链路：
+  - 系统启动后在 `Main()` 调用 `AdcStartDmaSampling()`
+  - ADC 连续转换，DMA 循环更新缓冲
+  - 上层通过 `AdcGetRaw()` / `AdcGetVoltage()` 取值
+
+#### 计算公式（IA 等）
+
+##### ADC原始码值转电压
+
+- `Vadc = Raw * 3.3 / 4095`
+- 其中：
+  - `Raw`：12bit ADC 原始值（0~4095）
+  - 3.3V：ADC参考电压
+
+##### 三相电流 IA/IB/IC
+
+- 硬件模型（运放差分）：
+  - `uo = k * (u2 - u1)`
+  - `k = Rf / R`
+  - `u2 - u1 = Iphase * Rm`
+- 电流换算：
+  - `Iphase = (Vadc - Voffset) / (Rm * k)`
+- 当前代码实现等价形式：
+  - `Iphase = (Vadc - zeroOffset) * gain`
+  - `gain = 1 / (Rm * AmpGain)`
+- 当前参数（已接入）：
+  - `Rm = 1mΩ = 0.001Ω`
+  - `AmpGain(k) = 20`
+  - `zeroOffset` 由上电静态校准得到（接近 1.65V）
+
+##### 相电压/母线电压 VA/VB/VC/VBUS
+
+- 基础：
+  - `Vmeas = Raw * 3.3 / 4095`
+- 若有分压网络，使用分压系数还原：
+  - `Vreal = Vmeas * Kdiv`
+- 当前代码默认 `Kdiv = 1`，后续按硬件实测阻值修正。
+
+#####  ADSPE
+
+- `Vadspe = Raw_adspe * 3.3 / 4095`
+- 若前端有比例关系，同样按 `Vreal = Vadspe * Kadspe` 修正。
+
+##### NTC温度
+
+- 先由 ADC 得到 NTC 电压：
+  - `Vntc = Raw_ntc * 3.3 / 4095`
+- 上拉分压求 NTC 电阻：
+  - `Rntc = Rpullup * Vntc / (Vref - Vntc)`
+- Beta 模型求温度：
+  - `T(K) = 1 / ( 1/T0 + ln(Rntc/R0)/B )`
+  - `T(°C) = T(K) - 273.15`
+- 当前默认参数：
+  - `Rpullup = 10kΩ`
+  - `R0 = 10kΩ @ 25°C`
+  - `B = 3950`
+
+#### 校准建议
+
+- 电流零点校准：电机不通电、PWM关闭状态下执行 `zeroOffset` 校准。
+- 电压系数校准：用万用表实测 VA/VB/VC/VBUS，对齐 `Kdiv`。
+- 温度校准：按实际 NTC 型号（`R0/B`）替换默认值。
+
 ## git提交备注
 
 ```text
