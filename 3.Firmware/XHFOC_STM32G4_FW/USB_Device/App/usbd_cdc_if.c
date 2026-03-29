@@ -347,17 +347,17 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   if ((epnum & 0x7FU) == (CDC_OUT_EP & 0x7FU))
   {
     hcdc->CDC_Tx.State = 0U;
+    (void) osSemaphoreRelease(sem_usb_tx_cdc);
   }
   else if ((epnum & 0x7FU) == (ODRIVE_OUT_EP & 0x7FU))
   {
     hcdc->REF_Tx.State = 0U;
+    (void) osSemaphoreRelease(sem_usb_tx_native);
   }
   else
   {
     return USBD_OK;
   }
-
-  (void) osSemaphoreRelease(sem_usb_tx);
   /* USER CODE END 13 */
   return result;
 }

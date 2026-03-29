@@ -20,8 +20,12 @@ public:
         // cannot send partial packets
         if (length > USB_TX_DATA_SIZE)
             return -1;
-        // wait for USB interface to become ready (lossless mode: don't drop on timeout)
-        (void)osSemaphoreAcquire(sem_usb_tx_, osWaitForever);
+        // wait for endpoint-specific TX semaphore, avoid hard lock on endpoint stalls
+        if (osSemaphoreAcquire(sem_usb_tx_, 50) != osOK)
+        {
+            usb_stats_.tx_overrun_cnt++;
+            return -1;
+        }
 
         // transmit packet (retry transient BUSY for a longer window to avoid response drops)
         uint8_t status = USBD_BUSY;
@@ -51,9 +55,8 @@ private:
     const osSemaphoreId &sem_usb_tx_;
 };
 
-// Note we could have independent semaphores here to allow concurrent transmission
-USBSender usb_packet_output_cdc(CDC_OUT_EP, sem_usb_tx);
-USBSender usb_packet_output_native(ODRIVE_OUT_EP, sem_usb_tx);
+USBSender usb_packet_output_cdc(CDC_OUT_EP, sem_usb_tx_cdc);
+USBSender usb_packet_output_native(ODRIVE_OUT_EP, sem_usb_tx_native);
 
 class TreatPacketSinkAsStreamSink : public StreamSink
 {

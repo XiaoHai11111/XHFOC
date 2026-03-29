@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include "freertos_inc.h"
 
 /* Exported types ------------------------------------------------------------*/
 /* Exported constants --------------------------------------------------------*/
@@ -25,10 +26,29 @@ void OnUart3AsciiCmd(const char* _cmd, size_t _len, StreamSink& _responseChannel
 template<typename ... TArgs>
 void Respond(StreamSink &output , const char *fmt, TArgs &&... args)
 {
-    char response[64];
-    size_t len = snprintf(response, sizeof(response), fmt, std::forward<TArgs>(args)...);
-    output.process_bytes((uint8_t *) response, len, nullptr);
+    if (log_mutex != nullptr)
+    {
+        (void)osMutexAcquire(log_mutex, osWaitForever);
+    }
+
+    char response[192];
+    int n = snprintf(response, sizeof(response), fmt, std::forward<TArgs>(args)...);
+    if (n < 0)
+    {
+        if (log_mutex != nullptr)
+        {
+            (void)osMutexRelease(log_mutex);
+        }
+        return;
+    }
+    size_t len = (n >= (int)sizeof(response)) ? (sizeof(response) - 1U) : (size_t)n;
+    output.process_bytes((const uint8_t *)response, len, nullptr);
     output.process_bytes((const uint8_t *) "\r\n", 2, nullptr);
+
+    if (log_mutex != nullptr)
+    {
+        (void)osMutexRelease(log_mutex);
+    }
 }
 
 

@@ -5,11 +5,16 @@
 extern "C" {
 #endif
 
+#include "cmsis_os.h"
+
 // List of semaphores
     extern osSemaphoreId sem_usb_irq;
     extern osSemaphoreId sem_uart3_dma;
     extern osSemaphoreId sem_usb_rx;
     extern osSemaphoreId sem_usb_tx;
+    extern osSemaphoreId sem_usb_tx_cdc;
+    extern osSemaphoreId sem_usb_tx_native;
+    extern osMutexId log_mutex;
 
 // List of Tasks
 /*--------------------------------- System Tasks -------------------------------------*/

@@ -80,8 +80,18 @@ int _write(int file, const char* data, int len);
 // @brief This is what printf calls internally
 int _write(int file, const char* data, int len)
 {
+    if (log_mutex != nullptr)
+    {
+        (void)osMutexAcquire(log_mutex, osWaitForever);
+    }
+
     usbStreamOutputPtr->process_bytes((const uint8_t*) data, len, nullptr);
     uart3StreamOutputPtr->process_bytes((const uint8_t*) data, len, nullptr);
+
+    if (log_mutex != nullptr)
+    {
+        (void)osMutexRelease(log_mutex);
+    }
 
     return len;
 }

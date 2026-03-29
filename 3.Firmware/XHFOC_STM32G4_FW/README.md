@@ -126,44 +126,72 @@
 ## git提交备注
 
 ```text
-feat(comm): XHFOC_STM32G4_FW第一次提交，cubemx配置代码提交，暂未接入运行链路和功能代码移植
+feat(comm): 完成通信架构与功能移植，接入USB双端点并修复Native接口卡死(通过注释灯语任务解决，后面再放开注释就没有卡死现象，可能是任务存在内存泄漏，后续遇到需要进行彻底解决)
 
 [背景]
-- 问题/需求: FOC通过精确控制电机的磁场方向，实现高效、稳定的运行。
-- 触发条件: 现工程仅有外设初始化，缺少统一通信架构、异步收发与命令解析链路。
+- 问题/需求: FOC通过精确控制电机的磁场方向，实现高效、稳定运行；项目需要统一通信架构、异步收发、命令解析与外设功能闭环。
+- 触发条件: 现工程已完成CubeMX外设初始化，但通信链路与业务模块需从 RTOS_MT6816_FW 完整移植并联调；在 cli-tool 连接 `XH 1.0 Native Interface` 时出现通信卡死。
 
 [改动]
 - 新增目录:
-  - 通信架构相关目录（协议层、传输层、平台适配层；本次以文件导入为主）
+  - 3rdParty/fibre
+  - Ctrl/Motor
+  - Ctrl/Sensor/Encoder
+  - Ctrl/Signal/LED
+  - Platform/CmdCtrlMotor
+  - Platform/Communication
+  - Platform/Memory
+  - Platform/Sensor/Encoder
+  - Platform/Signal/LED
+  - UserApp
 - 修改文件:
-  - 无核心逻辑改动（仅拷贝移植文件并纳入工程）
+  - CMakeLists.txt
+  - Core/Src/app_freertos.c
+  - Core/Src/main.c
+  - Core/Src/dma.c
+  - Core/Src/usart.c
+  - Core/Src/stm32g4xx_it.c
+  - USB_Device/App/usbd_cdc_if.c
+  - USB_Device/App/usbd_cdc_if.h
+  - USB_Device/App/usbd_desc.c
+  - USB_Device/App/usbd_desc.h
+  - USB_Device/App/usb_device.c
+  - USB_Device/App/usb_device.h
+  - USB_Device/Target/usbd_conf.c
+  - USB_Device/Target/usbd_conf.h
+  - Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Inc/usbd_cdc.h
+  - Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+  - README.md
 - 关键点:
-  - 完成通信架构代码入库，建立后续移植的目录与文件基础。
-  - 暂未接入 USART3 / USB CDC 的异步收发流程。
-  - 暂未接入命令分发、解析与执行链路。
-  - 暂未改动现有 CubeMX 外设初始化流程。
+  - 完成通信架构、灯语系统、MT6816、EEPROM模块移植并接入运行链路。
+  - 完成 USART3 `中断 + RX DMA(循环) + TX DMA(普通)` 异步收发链路。
+  - 完成 USB 双端点通信：`CDC(EP1)` + `Native/ODrive(EP3)`，名称与源工程保持一致。
+  - 修复 Native 通信卡死：拆分USB发送同步路径，避免不同端点互相阻塞导致死锁。
+  - 完成命令分发/解析/执行链路接入（ASCII + Native协议路径）。
 
 [影响评估]
-- 硬件影响: 无新增硬件连接变更。
-- 实时性影响: 当前仅静态文件导入，对实时路径无新增负担。
-- 资源影响: 增加少量 Flash 占用（代码文件导入），RAM运行态影响可忽略。
-- 兼容性影响: 保留 CubeMX 框架
+- 硬件影响: 无新增硬件连接，复用现有 SPI1/USART3/USB/LED 引脚。
+- 实时性影响: 通信与灯语任务为异步任务，主控制链路影响可控；卡死修复后通信阻塞风险显著下降。
+- 资源影响: Flash/RAM 占用增加（新增通信与功能模块）；构建通过且资源占用在可用范围内。
+- 兼容性影响: 保留 CubeMX 框架与工程结构，兼容现有生成流程。
 
 [验证]
 - 构建: cmake --preset Debug && cmake --build --preset Debug -j 8
 - 板测:
-  - [ ] USART3 接收链路接入并可稳定收包
-  - [ ] USART3 发送链路接入并可稳定发包
-  - [ ] 命令解析链路可从输入到回包闭环
-  - [ ] 异常帧/超时处理符合预期
+  - [x] USB枚举为复合设备，显示 `XH 1.0 CDC Interface` 与 `XH 1.0 Native Interface`
+  - [x] cli-tool 通过 `XH 1.0 Native Interface` 可持续收发，无卡死
+  - [x] USART3 收发链路可正常收包/发包
+  - [x] 灯语状态机轮播与 MT6816 数据输出正常
 
 [回滚]
 - git revert <this_commit_hash>
 - 重点回滚文件:
-  - <通信架构新增目录1>
-  - <通信架构新增目录2>
-  - <通信架构核心文件1>
-  - <通信架构核心文件2>
+  - Middlewares/ST/STM32_USB_Device_Library/Class/CDC/Src/usbd_cdc.c
+  - USB_Device/App/usbd_cdc_if.c
+  - Platform/Communication/interface_usb.cpp
+  - UserApp/main.cpp
+
+参考上面的模板帮我重新git提交备注，根据此次文档的主要修改内容
 ```
 
 

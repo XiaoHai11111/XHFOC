@@ -53,6 +53,9 @@ osSemaphoreId sem_usb_irq;
 osSemaphoreId sem_uart3_dma;
 osSemaphoreId sem_usb_rx;
 osSemaphoreId sem_usb_tx;
+osSemaphoreId sem_usb_tx_cdc;
+osSemaphoreId sem_usb_tx_native;
+osMutexId log_mutex;
 
 /* USER CODE END Variables */
 /* Definitions for defaultTask */
@@ -102,6 +105,16 @@ void MX_FREERTOS_Init(void) {
   // Create a semaphore for USB TX
   osSemaphoreDef(sem_usb_tx);
   sem_usb_tx = osSemaphoreNew(1, 1, osSemaphore(sem_usb_tx));
+
+  // Create per-endpoint semaphores for USB TX to avoid cross-endpoint blocking.
+  osSemaphoreDef(sem_usb_tx_cdc);
+  sem_usb_tx_cdc = osSemaphoreNew(1, 1, osSemaphore(sem_usb_tx_cdc));
+  osSemaphoreDef(sem_usb_tx_native);
+  sem_usb_tx_native = osSemaphoreNew(1, 1, osSemaphore(sem_usb_tx_native));
+
+  // Serialize C library formatting/output paths used by multiple tasks.
+  osMutexDef(log_mutex);
+  log_mutex = osMutexNew(osMutex(log_mutex));
 
   /* USER CODE END RTOS_SEMAPHORES */
 
@@ -159,4 +172,3 @@ void StartDefaultTask(void *argument)
 /* USER CODE BEGIN Application */
 
 /* USER CODE END Application */
-

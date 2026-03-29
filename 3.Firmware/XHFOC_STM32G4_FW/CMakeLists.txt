@@ -52,7 +52,10 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 
     Ctrl/Motor/math_utils.cpp
     Ctrl/Motor/motor.cpp
+    Ctrl/Sensor/CurrentSense/current_sense_base.cpp
+    Ctrl/Sensor/CurrentSense/Instances/low_side_current_sense.cpp
     Ctrl/Sensor/Encoder/mt6816_base.cpp
+    Ctrl/Sensor/NtcSense/ntc_sense_base.cpp
     Ctrl/Signal/LED/led_base.cpp
 
     Platform/CmdCtrlMotor/cmd_ctrl_motor.cpp
@@ -61,7 +64,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Communication/interface_uart.cpp
     Platform/Communication/interface_usb.cpp
     Platform/Memory/random_flash_utils.cpp
+    Platform/Sensor/AdspeSense/adspe_sense.cpp
+    Platform/Sensor/CurrentSense/current_sense.cpp
     Platform/Sensor/Encoder/mt6816_stm32.cpp
+    Platform/Sensor/NtcSense/ntc_sense.cpp
+    Platform/Sensor/VoltageSense/voltage_sense.cpp
     Platform/Signal/LED/led_stm32.cpp
 
     UserApp/main.cpp
@@ -75,13 +82,22 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     3rdParty/fibre/include
 
     Ctrl/Motor
+    Ctrl/Sensor/AdspeSense
+    Ctrl/Sensor/CurrentSense
+    Ctrl/Sensor/CurrentSense/Instances
     Ctrl/Sensor/Encoder
+    Ctrl/Sensor/NtcSense
+    Ctrl/Sensor/VoltageSense
     Ctrl/Signal/LED
 
     Platform/CmdCtrlMotor
     Platform/Communication
     Platform/Memory
+    Platform/Sensor/AdspeSense
+    Platform/Sensor/CurrentSense
     Platform/Sensor/Encoder
+    Platform/Sensor/NtcSense
+    Platform/Sensor/VoltageSense
     Platform/Signal/LED
 
     UserApp
