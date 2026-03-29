@@ -19,11 +19,8 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
-#include "adc.h"
 #include "dma.h"
-#include "fdcan.h"
 #include "spi.h"
-#include "tim.h"
 #include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
@@ -51,7 +48,9 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint64_t serialNumber;
+char serialNumberStr[13];
+__attribute__((section(".ccmram"))) uint8_t ucHeap[configTOTAL_HEAP_SIZE];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,6 +73,19 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+  uint32_t uuid0 = *(uint32_t *) (UID_BASE + 0);
+  uint32_t uuid1 = *(uint32_t *) (UID_BASE + 4);
+  uint32_t uuid2 = *(uint32_t *) (UID_BASE + 8);
+  uint32_t uuid_mixed_part = uuid0 + uuid2;
+  serialNumber = ((uint64_t) uuid_mixed_part << 16) | (uint64_t) (uuid1 >> 16);
+
+  uint64_t val = serialNumber;
+  for (size_t i = 0; i < 12; ++i)
+  {
+    serialNumberStr[i] = "0123456789ABCDEF"[(val >> (48 - 4)) & 0xf];
+    val <<= 4;
+  }
+  serialNumberStr[12] = 0;
 
   /* USER CODE END 1 */
 
@@ -98,12 +110,6 @@ int main(void)
   MX_DMA_Init();
   MX_SPI1_Init();
   MX_USART3_UART_Init();
-  MX_ADC1_Init();
-  MX_ADC2_Init();
-  MX_FDCAN1_Init();
-  MX_TIM1_Init();
-  MX_TIM3_Init();
-  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */

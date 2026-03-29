@@ -22,7 +22,9 @@
 #include "usbd_cdc_if.h"
 
 /* USER CODE BEGIN INCLUDE */
-
+#include "cmsis_os.h"
+#include <freertos_inc.h>
+#include "interface_usb.hpp"
 /* USER CODE END INCLUDE */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -94,7 +96,11 @@ uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
 /* USER CODE BEGIN PRIVATE_VARIABLES */
+uint8_t CDCRxBufferFS[APP_RX_DATA_SIZE];
+uint8_t REFRxBufferFS[APP_RX_DATA_SIZE];
 
+uint8_t CDCTxBufferFS[APP_TX_DATA_SIZE];
+uint8_t REFTxBufferFS[APP_TX_DATA_SIZE];
 /* USER CODE END PRIVATE_VARIABLES */
 
 /**
@@ -123,10 +129,11 @@ extern USBD_HandleTypeDef hUsbDeviceFS;
 
 static int8_t CDC_Init_FS(void);
 static int8_t CDC_DeInit_FS(void);
-static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
-static int8_t CDC_Receive_FS(uint8_t* pbuf, uint32_t *Len);
+// static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
+// static int8_t CDC_Receive_FS(uint8_t* pbuf, uint32_t *Len);
 static int8_t CDC_TransmitCplt_FS(uint8_t *pbuf, uint32_t *Len, uint8_t epnum);
-
+static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
+static int8_t CDC_Receive_FS(uint8_t* pbuf, uint32_t *Len, uint8_t endpoint_pair);
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_DECLARATION */
 
 /* USER CODE END PRIVATE_FUNCTIONS_DECLARATION */
@@ -153,11 +160,23 @@ static int8_t CDC_Init_FS(void)
 {
   /* USER CODE BEGIN 3 */
   /* Set Application Buffers */
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, CDCTxBufferFS, 0, CDC_OUT_EP);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, CDCRxBufferFS, CDC_OUT_EP);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, REFTxBufferFS, 0, ODRIVE_OUT_EP);
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, REFRxBufferFS, ODRIVE_OUT_EP);
   return (USBD_OK);
   /* USER CODE END 3 */
 }
+
+// static int8_t CDC_Init_FS(void)
+// {
+//   /* USER CODE BEGIN 3 */
+//   /* Set Application Buffers */
+//   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
+//   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+//   return (USBD_OK);
+//   /* USER CODE END 3 */
+// }
 
 /**
   * @brief  DeInitializes the CDC media low layer
@@ -258,14 +277,23 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   * @param  Len: Number of data received (in bytes)
   * @retval Result of the operation: USBD_OK if all operations are OK else USBD_FAIL
   */
-static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
+// static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
+// {
+//   /* USER CODE BEGIN 6 */
+//   // USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
+//   // USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+//   return (USBD_OK);
+//   /* USER CODE END 6 */
+// }
+static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len, uint8_t endpoint_pair)
 {
   /* USER CODE BEGIN 6 */
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
-  USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+  usb_rx_process_packet(Buf, *Len, endpoint_pair);
+
   return (USBD_OK);
   /* USER CODE END 6 */
 }
+
 
 /**
   * @brief  CDC_Transmit_FS
@@ -278,19 +306,19 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   * @param  Len: Number of data to be sent (in bytes)
   * @retval USBD_OK if all operations are OK else USBD_FAIL or USBD_BUSY
   */
-uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
-{
-  uint8_t result = USBD_OK;
-  /* USER CODE BEGIN 7 */
-  USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
-  if (hcdc->TxState != 0){
-    return USBD_BUSY;
-  }
-  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
-  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
-  /* USER CODE END 7 */
-  return result;
-}
+// uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len)
+// {
+//   uint8_t result = USBD_OK;
+//   /* USER CODE BEGIN 7 */
+//   USBD_CDC_HandleTypeDef *hcdc = (USBD_CDC_HandleTypeDef*)hUsbDeviceFS.pClassData;
+//   if (hcdc->TxState != 0){
+//     return USBD_BUSY;
+//   }
+//   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, Buf, Len);
+//   result = USBD_CDC_TransmitPacket(&hUsbDeviceFS);
+//   /* USER CODE END 7 */
+//   return result;
+// }
 
 /**
   * @brief  CDC_TransmitCplt_FS
@@ -310,13 +338,72 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
   /* USER CODE BEGIN 13 */
   UNUSED(Buf);
   UNUSED(Len);
-  UNUSED(epnum);
+
+  USBD_CDC_HandleTypeDef* hcdc = (USBD_CDC_HandleTypeDef*) hUsbDeviceFS.pClassData;
+  if (hcdc == NULL)
+    return USBD_FAIL;
+
+  // NOTE: In this stack, DataIn callback epnum uses endpoint number (1/3), not 0x81/0x83.
+  if ((epnum & 0x7FU) == (CDC_OUT_EP & 0x7FU))
+  {
+    hcdc->CDC_Tx.State = 0U;
+  }
+  else if ((epnum & 0x7FU) == (ODRIVE_OUT_EP & 0x7FU))
+  {
+    hcdc->REF_Tx.State = 0U;
+  }
+  else
+  {
+    return USBD_OK;
+  }
+
+  (void) osSemaphoreRelease(sem_usb_tx);
   /* USER CODE END 13 */
   return result;
 }
 
 /* USER CODE BEGIN PRIVATE_FUNCTIONS_IMPLEMENTATION */
+uint8_t CDC_Transmit_FS(uint8_t* Buf, uint16_t Len, uint8_t endpoint_pair)
+{
+  uint8_t result = USBD_OK;
+  /* USER CODE BEGIN 7 */
+  //Check length
+  if (Len > USB_TX_DATA_SIZE)
+    return USBD_FAIL;
 
+  USBD_CDC_HandleTypeDef* hcdc = (USBD_CDC_HandleTypeDef*) hUsbDeviceFS.pClassData;
+  if (hcdc == NULL)
+    return USBD_FAIL;
+
+  // Select endpoint pair and software TX buffer
+  USBD_CDC_EP_HandleTypeDef* hEP_Tx;
+  uint8_t* tx_buff;
+  if (endpoint_pair == CDC_OUT_EP)
+  {
+    hEP_Tx = &hcdc->CDC_Tx;
+    tx_buff = CDCTxBufferFS;
+  }
+  else if (endpoint_pair == ODRIVE_OUT_EP)
+  {
+    hEP_Tx = &hcdc->REF_Tx;
+    tx_buff = REFTxBufferFS;
+  }
+  else
+  {
+    return USBD_FAIL;
+  }
+
+  // Check for ongoing transmission
+  if (hEP_Tx->State != 0)
+    return USBD_BUSY;
+
+  // memcpy payload to endpoint dedicated TX buffer
+  memcpy(tx_buff, Buf, Len);
+  USBD_CDC_SetTxBuffer(&hUsbDeviceFS, tx_buff, Len, endpoint_pair);
+  result = USBD_CDC_TransmitPacket(&hUsbDeviceFS, endpoint_pair);
+  /* USER CODE END 7 */
+  return result;
+}
 /* USER CODE END PRIVATE_FUNCTIONS_IMPLEMENTATION */
 
 /**
