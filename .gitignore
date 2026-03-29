@@ -14,6 +14,12 @@
 /3.Firmware/UART_TEST_FW/cmake-build-debug-mingw_stm32
 /3.Firmware/UART_TEST_FW/build
 
+#RTOS_MT6816_FW
+/3.Firmware/XHFOC_STM32G4_FW/.idea
+/3.Firmware/XHFOC_STM32G4_FW/cmake-build-debug-mingw_stm32
+/3.Firmware/XHFOC_STM32G4_FW/build
+/3.Firmware/XHFOC_STM32G4_FW/HelloWord-Dynamic-fw
+/3.Firmware/XHFOC_STM32G4_FW/Ctrl-Step-Driver-STM32F1-fw
 
 #CLI-Tool
 /4.Software/CLI-Tool/.idea
