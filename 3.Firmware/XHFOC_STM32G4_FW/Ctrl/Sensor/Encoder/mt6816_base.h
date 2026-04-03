@@ -15,7 +15,7 @@ public:
 
 
     bool Init() override;
-    uint16_t UpdateAngle() override;  // Get current rawAngle (rad)
+    uint16_t UpdateAngle() override;
     bool IsCalibrated() override;
     uint16_t GetSpiRawData() const
     { return spiRawData.rawData; }
@@ -41,6 +41,12 @@ private:
     uint16_t dataRx[2];
     uint8_t hCount;
 
+
+protected:
+    float GetRawAngle() override;
+
+private:
+    void ReadRawData();
 
     /***** Port Specified Implements *****/
     virtual void SpiInit() = 0;

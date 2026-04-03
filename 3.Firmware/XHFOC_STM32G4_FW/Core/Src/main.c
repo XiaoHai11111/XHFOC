@@ -63,6 +63,9 @@ void MX_FREERTOS_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+__weak void OnFocTimerElapsedFromISR(void)
+{
+}
 
 /* USER CODE END 0 */
 
@@ -183,7 +186,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void OnTimerCallback(TIM_TypeDef *timInstance);
 /* USER CODE END 4 */
 
 /**
@@ -202,6 +205,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   if (htim->Instance == TIM6)
   {
     HAL_IncTick();
+  }
+  else
+  {
+    OnTimerCallback(htim->Instance);
   }
   /* USER CODE BEGIN Callback 1 */
 

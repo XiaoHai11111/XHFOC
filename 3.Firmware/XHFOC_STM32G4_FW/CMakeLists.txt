@@ -50,10 +50,14 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     3rdParty/fibre/protocol.cpp
 
+    Ctrl/Driver/driver_fd6288q.cpp
+    Ctrl/Motor/lowpass_filter.cpp
     Ctrl/Motor/math_utils.cpp
     Ctrl/Motor/motor.cpp
+    Ctrl/Motor/pid.cpp
     Ctrl/Sensor/CurrentSense/current_sense_base.cpp
     Ctrl/Sensor/CurrentSense/Instances/low_side_current_sense.cpp
+    Ctrl/Sensor/Encoder/encoder_base.cpp
     Ctrl/Sensor/Encoder/mt6816_base.cpp
     Ctrl/Sensor/NtcSense/ntc_sense_base.cpp
     Ctrl/Signal/KEY/key_base.cpp
@@ -64,6 +68,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Communication/communication.cpp
     Platform/Communication/interface_uart.cpp
     Platform/Communication/interface_usb.cpp
+    Platform/Driver/driver.cpp
     Platform/Memory/random_flash_utils.cpp
     Platform/Sensor/AdspeSense/adspe_sense.cpp
     Platform/Sensor/CurrentSense/current_sense.cpp
@@ -72,6 +77,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Sensor/VoltageSense/voltage_sense.cpp
     Platform/Signal/KEY/key_stm32.cpp
     Platform/Signal/LED/led_stm32.cpp
+    Platform/Utils/time_utils.cpp
+    Platform/Timer/timer.cpp
 
     UserApp/main.cpp
     UserApp/protocols/ascii_protocol.cpp
@@ -83,6 +90,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     3rdParty/fibre/include
 
+    Ctrl/Driver
     Ctrl/Motor
     Ctrl/Sensor/AdspeSense
     Ctrl/Sensor/CurrentSense
@@ -92,9 +100,11 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Ctrl/Sensor/VoltageSense
     Ctrl/Signal/KEY
     Ctrl/Signal/LED
+    Ctrl/Signal/WS2812B
 
     Platform/CmdCtrlMotor
     Platform/Communication
+    Platform/Driver
     Platform/Memory
     Platform/Sensor/AdspeSense
     Platform/Sensor/CurrentSense
@@ -103,6 +113,8 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Sensor/VoltageSense
     Platform/Signal/KEY
     Platform/Signal/LED
+    Platform/Utils
+    Platform/Timer
 
     UserApp
     UserApp/protocols
