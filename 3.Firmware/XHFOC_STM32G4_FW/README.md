@@ -281,7 +281,54 @@ feat(comm): 完成通信架构与功能移植，接入USB双端点并修复Nativ
 参考上面的模板帮我重新git提交备注，根据此次文档的主要修改内容
 ```
 
+```
+feat(foc): 接入ADSPE旋钮调速，支持开环速度正反转控制
 
+[背景]
+- 问题/需求: 当前开环速度由固定参数给定，调试时无法在线调速与切换方向。
+- 触发条件: 已具备 ADSPE ADC 采样通道与 FOC 开环控制链路，需将旋钮输入接入目标速度。
+
+[改动]
+- 关键文件:
+  - UserApp/main.cpp
+  - Platform/Sensor/AdspeSense/adspe_sense.h
+  - Platform/Sensor/AdspeSense/adspe_sense.cpp
+  - Core/Inc/adc.h
+  - Core/Src/adc.c
+- 核心实现:
+  - 接入 `AdspeSense` 读取 ADSPE 原始 ADC 值（0~4095）。
+  - 新增旋钮归一化映射逻辑：中位为 0，左侧反转，右侧正转（-1~+1）。
+  - 新增中心死区，避免旋钮中位抖动导致电机微动。
+  - 新增一阶低通平滑目标值，降低目标突变引起的冲击与噪声。
+  - 在 5kHz 控制循环中实时更新 `focMotor.target`，实现在线调速与方向切换。
+
+[影响评估]
+- 硬件影响: 无新增连线，复用现有 ADSPE 模拟输入通道。
+- 实时性影响: 目标更新位于控制线程内，计算开销小，对控制周期影响可忽略。
+- 资源影响: 仅增加少量逻辑与状态变量，RAM/Flash 增量很小。
+- 兼容性影响: 保持原有 TIM1/TIM3 与开环控制架构不变。
+
+[验证]
+- 构建: `cmake --build cmake-build-debug-stm32 -j 4`
+- 板测:
+  - [x] 旋钮可实时调节开环速度大小
+  - [x] 旋钮过中位可实现正反转切换
+  - [x] 中位死区内电机可稳定停转
+  - [x] 调速过程连续，无明显跳变失控
+
+[可调参数]
+- `kOpenLoopTargetMax`: 旋钮满量程对应最大机械角速度
+- `kAdspeCenter`: 旋钮机械中位校准
+- `kAdspeDeadband`: 中位死区大小
+- `kAdspeFilterAlpha`: 调速平滑系数
+- `kAdspeInvert`: 方向反转开关
+
+[回滚]
+- `git revert <this_commit_hash>`
+- 重点回滚文件:
+  - UserApp/main.cpp
+  - Platform/Sensor/AdspeSense/adspe_sense.cpp
+```
 
 
 

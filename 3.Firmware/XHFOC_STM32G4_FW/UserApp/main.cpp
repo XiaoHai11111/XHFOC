@@ -8,6 +8,7 @@
 #include "led_stm32.h"
 #include "key_stm32.h"
 #include "current_sense.h"
+#include "adspe_sense.h"
 #include "timer.hpp"
 #include <cstring>
 
@@ -19,6 +20,7 @@ Timer timerCtrlLoop(&htim3, 5000);
 Driver focDriver(12.0f);
 Led statusLed;
 CurrentSense currentSense(0.001f, 20.0f);
+AdspeSense adspeSense;
 Key key1(1,20,250,800);
 Key key2(2,20,250,800);
 Key key3(3,20,250,800);
@@ -124,6 +126,35 @@ static void OnKeyEvent(uint8_t keyId, KeyBase::Event event)
     Respond(*uart3StreamOutputPtr, "[key] KEY%u %s", keyId, KeyEventToString(event));
 }
 
+static float Clamp01(float v)
+{
+    if (v < 0.0f) return 0.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+}
+
+static float ApplyCenterDeadband(float value, float center, float deadband)
+{
+    value = Clamp01(value);
+    center = Clamp01(center);
+    deadband = Clamp01(deadband);
+
+    const float posStart = center + deadband;
+    const float negStart = center - deadband;
+
+    if (value > posStart)
+    {
+        const float denom = (1.0f - posStart);
+        return (denom > 1e-6f) ? ((value - posStart) / denom) : 0.0f;
+    }
+    if (value < negStart)
+    {
+        const float denom = negStart;
+        return (denom > 1e-6f) ? (-(negStart - value) / denom) : 0.0f;
+    }
+    return 0.0f;
+}
+
 static void ThreadPeripheral(void* argument)
 {
     (void)argument;
@@ -149,7 +180,7 @@ static void ThreadPeripheral(void* argument)
 
     for (;;)
     {
-        SendFocDebugFrameJustFloat500Hz();
+        //SendFocDebugFrameJustFloat500Hz();通过串口打印TIM1的三路PWM占空比，查看马鞍波是否正常
 
         elapsedForKeys += kLoopMs;
         if (elapsedForKeys >= kTickMs)
@@ -184,28 +215,41 @@ static void ThreadFocControl(void* argument)
     (void)argument;
 
     constexpr uint32_t kControlLoopHz = 5000U;
-    constexpr float kOpenLoopDirection = 1.0f;   // +1 or -1
-    constexpr float kOpenLoopTargetFixed = 56.52f; // mechanical rad/s
+    constexpr float kOpenLoopTargetMax = 56.52f; // mechanical rad/s
+    constexpr float kAdspeCenter = 0.5f;         // knob center
+    constexpr float kAdspeDeadband = 0.03f;      // center deadband
+    constexpr float kAdspeFilterAlpha = 0.02f;   // smooth target updates
+    constexpr bool kAdspeInvert = false;
+
+    const auto ReadAdspeSigned = []() -> float
+    {
+        float norm = (float)adspeSense.GetRaw() / 4095.0f;
+        norm = Clamp01(norm);
+        float signedCmd = ApplyCenterDeadband(norm, kAdspeCenter, kAdspeDeadband);
+        if (kAdspeInvert) signedCmd = -signedCmd;
+        return signedCmd;
+    };
 
     focMotor.SetControlLoopHz((float)kControlLoopHz);
     focMotor.AttachDriver(&focDriver);
     focMotor.AttachCurrentSense(&currentSense);
+    adspeSense.Init();
     focMotor.config.controlMode = Motor::VELOCITY_OPEN_LOOP;
     focMotor.config.voltageLimit = 0.8f;
     focMotor.config.currentLimit = 0.6f;
-    focMotor.config.velocityLimit = kOpenLoopTargetFixed;
+    focMotor.config.velocityLimit = kOpenLoopTargetMax;
 
     const bool focInitOk = focMotor.Init();
-    Respond(*uart3StreamOutputPtr, "[foc] init=%d mode=%d calib=%d err=%d dir=%.0f",
+    Respond(*uart3StreamOutputPtr, "[foc] init=%d mode=%d calib=%d err=%d",
             focInitOk ? 1 : 0,
             static_cast<int>(focMotor.config.controlMode),
             mt6816.IsCalibrated() ? 1 : 0,
-            static_cast<int>(focMotor.error),
-            (double)kOpenLoopDirection);
+            static_cast<int>(focMotor.error));
 
     if (focInitOk)
     {
-        focMotor.target = kOpenLoopTargetFixed * kOpenLoopDirection;
+        const float adspeSigned0 = ReadAdspeSigned();
+        focMotor.target = adspeSigned0 * kOpenLoopTargetMax;
         focMotor.SetEnable(true);
         Respond(*uart3StreamOutputPtr, "[foc] enabled target=%.3f", (double)focMotor.target);
     }
@@ -218,10 +262,17 @@ static void ThreadFocControl(void* argument)
                 (unsigned long)__HAL_TIM_GET_AUTORELOAD(&htim1));
     }
 
+    float adspeSignedFiltered = ReadAdspeSigned();
     for (;;)
     {
         // Control loop is triggered by TIM3 update interrupt at 5 kHz.
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (focInitOk)
+        {
+            const float adspeSigned = ReadAdspeSigned();
+            adspeSignedFiltered += (adspeSigned - adspeSignedFiltered) * kAdspeFilterAlpha;
+            focMotor.target = adspeSignedFiltered * kOpenLoopTargetMax;
+        }
         focMotor.Tick();
     }
 }
