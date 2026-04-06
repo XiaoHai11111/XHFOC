@@ -30,14 +30,21 @@ enum
 static uint16_t adc1_regular_dma_buf[ADC1_REGULAR_CHANNEL_COUNT] = {0};
 static uint16_t adc2_regular_dma_buf[ADC2_REGULAR_CHANNEL_COUNT] = {0};
 static bool adc_dma_started = false;
+static bool adc_injected_started = false;
+static uint16_t adc1_injected_raw[3] = {0, 0, 0};
+static bool adc1_injected_valid = false;
 
 static uint16_t adc_read_signal_raw(AdcSignal_t signal)
 {
   switch (signal)
   {
-    case ADC_SIGNAL_IA: return adc1_regular_dma_buf[0];
+    // ADC1 regular rank map from CubeMX:
+    // rank1: ADC_CHANNEL_1 -> M0_IC
+    // rank2: ADC_CHANNEL_2 -> M0_IB
+    // rank3: ADC_CHANNEL_3 -> M0_IA
+    case ADC_SIGNAL_IA: return adc1_regular_dma_buf[2];
     case ADC_SIGNAL_IB: return adc1_regular_dma_buf[1];
-    case ADC_SIGNAL_IC: return adc1_regular_dma_buf[2];
+    case ADC_SIGNAL_IC: return adc1_regular_dma_buf[0];
     case ADC_SIGNAL_NTC: return adc1_regular_dma_buf[3];
     case ADC_SIGNAL_VA: return adc2_regular_dma_buf[0];
     case ADC_SIGNAL_VB: return adc2_regular_dma_buf[1];
@@ -45,6 +52,25 @@ static uint16_t adc_read_signal_raw(AdcSignal_t signal)
     case ADC_SIGNAL_ADSPE: return adc2_regular_dma_buf[3];
     case ADC_SIGNAL_VBUS: return adc2_regular_dma_buf[4];
     default: return 0;
+  }
+}
+
+static void adc_update_injected_snapshot(void)
+{
+  if ((!adc_injected_started) || (hadc1.Instance == NULL))
+  {
+    return;
+  }
+
+  // Injected ranks keep the same channel order as configured:
+  // JDR1: IC, JDR2: IB, JDR3: IA
+  adc1_injected_raw[0] = (uint16_t)(hadc1.Instance->JDR3 & 0xFFFFU); // IA
+  adc1_injected_raw[1] = (uint16_t)(hadc1.Instance->JDR2 & 0xFFFFU); // IB
+  adc1_injected_raw[2] = (uint16_t)(hadc1.Instance->JDR1 & 0xFFFFU); // IC
+
+  if ((adc1_injected_raw[0] != 0U) || (adc1_injected_raw[1] != 0U) || (adc1_injected_raw[2] != 0U))
+  {
+    adc1_injected_valid = true;
   }
 }
 
@@ -547,12 +573,56 @@ void AdcStartDmaSampling(void)
     return;
   }
 
+  adc_injected_started = false;
+  adc1_injected_valid = false;
+  if (HAL_ADCEx_InjectedStart_IT(&hadc1) == HAL_OK)
+  {
+    adc_injected_started = true;
+  }
+  else if (HAL_ADCEx_InjectedStart(&hadc1) == HAL_OK)
+  {
+    // Fallback when injected IRQ path is unavailable.
+    adc_injected_started = true;
+  }
+
   adc_dma_started = true;
 }
 
 uint16_t AdcGetRaw(AdcSignal_t signal)
 {
   return adc_read_signal_raw(signal);
+}
+
+bool AdcGetInjectedPhaseCurrentsRaw(uint16_t* ia, uint16_t* ib, uint16_t* ic)
+{
+  if ((ia == NULL) || (ib == NULL) || (ic == NULL))
+  {
+    return false;
+  }
+
+  if (!adc_injected_started)
+  {
+    return false;
+  }
+
+  adc_update_injected_snapshot();
+  *ia = adc1_injected_raw[0];
+  *ib = adc1_injected_raw[1];
+  *ic = adc1_injected_raw[2];
+  return adc1_injected_valid;
+}
+
+void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
+{
+  if ((hadc == NULL) || (hadc->Instance != ADC1))
+  {
+    return;
+  }
+
+  adc1_injected_raw[0] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_3); // IA
+  adc1_injected_raw[1] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2); // IB
+  adc1_injected_raw[2] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1); // IC
+  adc1_injected_valid = true;
 }
 
 float AdcRawToVoltage(uint16_t raw)

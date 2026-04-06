@@ -60,6 +60,7 @@ void MX_ADC2_Init(void);
 /* USER CODE BEGIN Prototypes */
 void AdcStartDmaSampling(void);
 uint16_t AdcGetRaw(AdcSignal_t signal);
+bool AdcGetInjectedPhaseCurrentsRaw(uint16_t* ia, uint16_t* ib, uint16_t* ic);
 float AdcRawToVoltage(uint16_t raw);
 float AdcGetVoltage(AdcSignal_t signal);
 

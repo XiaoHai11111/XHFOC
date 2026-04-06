@@ -282,52 +282,50 @@ feat(comm): 完成通信架构与功能移植，接入USB双端点并修复Nativ
 ```
 
 ```
-feat(foc): 接入ADSPE旋钮调速，支持开环速度正反转控制
+feat(foc): 打通电流环并实现下桥臂导通窗口电流采样触发，待实现编码器线性化校准代码，由于falsh不足更换芯片G474RET6,迁移当前代码
 
 [背景]
-- 问题/需求: 当前开环速度由固定参数给定，调试时无法在线调速与切换方向。
-- 触发条件: 已具备 ADSPE ADC 采样通道与 FOC 开环控制链路，需将旋钮输入接入目标速度。
+- 问题/需求: 现有 FOC 已完成基础闭环框架，但电流环链路未完全打通，采样时序与 PWM 导通窗口不严格对齐，导致电流反馈抖动和控制稳定性不足。
+- 触发条件: 在速度闭环联调过程中出现异响、抖动和发热，需优先完善“电流采样 -> dq 电流计算 -> 电流 PI 输出”闭环路径。
 
 [改动]
-- 关键文件:
-  - UserApp/main.cpp
-  - Platform/Sensor/AdspeSense/adspe_sense.h
-  - Platform/Sensor/AdspeSense/adspe_sense.cpp
-  - Core/Inc/adc.h
-  - Core/Src/adc.c
-- 核心实现:
-  - 接入 `AdspeSense` 读取 ADSPE 原始 ADC 值（0~4095）。
-  - 新增旋钮归一化映射逻辑：中位为 0，左侧反转，右侧正转（-1~+1）。
-  - 新增中心死区，避免旋钮中位抖动导致电机微动。
-  - 新增一阶低通平滑目标值，降低目标突变引起的冲击与噪声。
-  - 在 5kHz 控制循环中实时更新 `focMotor.target`，实现在线调速与方向切换。
+- 关键实现:
+	- 打通电流环控制链路：采样 -> Clarke/Park -> Id/Iq PI -> 电压指令输出。
+	- 将电流采样改为事件触发（注入组），在下桥臂导通窗口进行采样，降低开关噪声耦合与采样相位误差。
+	- 通过定时器事件捕获触发 ADC 注入转换，保证采样时刻与 PWM 同步。
+	- 完善电流环相关限幅与滤波参数衔接，提升闭环可控性。
+- 涉及文件（按实际提交为准）:
+	- Core/Inc/adc.h
+	- Core/Src/adc.c
+	- Core/Src/tim.c
+	- Platform/Driver/driver.cpp
+	- Platform/Sensor/CurrentSense/current_sense.cpp
+	- Ctrl/Sensor/CurrentSense/*
+	- Ctrl/Motor/motor.cpp
+	- UserApp/main.cpp
 
 [影响评估]
-- 硬件影响: 无新增连线，复用现有 ADSPE 模拟输入通道。
-- 实时性影响: 目标更新位于控制线程内，计算开销小，对控制周期影响可忽略。
-- 资源影响: 仅增加少量逻辑与状态变量，RAM/Flash 增量很小。
-- 兼容性影响: 保持原有 TIM1/TIM3 与开环控制架构不变。
+- 硬件影响: 无新增硬件连接，复用现有三相采样与 PWM 驱动链路。
+- 实时性影响: 采样触发与 PWM 同步后，电流环时序更稳定；中断与计算负载小幅上升但在可控范围内。
+- 资源影响: 代码体积小幅增加，Flash/RAM 占用略增。
+- 兼容性影响: 保持现有工程架构与 CubeMX 生成流程兼容。
 
 [验证]
-- 构建: `cmake --build cmake-build-debug-stm32 -j 4`
+- 构建: cmake --preset Debug && cmake --build --preset Debug -j 8
 - 板测:
-  - [x] 旋钮可实时调节开环速度大小
-  - [x] 旋钮过中位可实现正反转切换
-  - [x] 中位死区内电机可稳定停转
-  - [x] 调速过程连续，无明显跳变失控
-
-[可调参数]
-- `kOpenLoopTargetMax`: 旋钮满量程对应最大机械角速度
-- `kAdspeCenter`: 旋钮机械中位校准
-- `kAdspeDeadband`: 中位死区大小
-- `kAdspeFilterAlpha`: 调速平滑系数
-- `kAdspeInvert`: 方向反转开关
+	- [x] ADC 注入采样可被事件稳定触发
+	- [x] 采样时刻位于下桥臂导通窗口
+	- [x] 电流环闭环链路可正常运行
+	- [x] 电机运行稳定性较改动前提升（抖动/异响减轻）
 
 [回滚]
-- `git revert <this_commit_hash>`
+- git revert <this_commit_hash>
 - 重点回滚文件:
-  - UserApp/main.cpp
-  - Platform/Sensor/AdspeSense/adspe_sense.cpp
+	- Core/Src/adc.c
+	- Core/Src/tim.c
+	- Platform/Driver/driver.cpp
+	- Platform/Sensor/CurrentSense/current_sense.cpp
+	- Ctrl/Motor/motor.cpp
 ```
 
 
