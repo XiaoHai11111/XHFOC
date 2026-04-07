@@ -44,6 +44,7 @@ struct FocDebugSpeedSample_t
     volatile uint32_t seq;
     volatile float target;
     volatile float velocity;
+    volatile float position;
 };
 
 static FocDebugSpeedSample_t gFocDebugSpeedSample = {};
@@ -57,15 +58,16 @@ extern "C" void OnFocPwmDutyUpdateFromControlLoop(float dutyA, float dutyB, floa
     gFocDebugDutySample.seq++;
 }
 
-static void StoreFocDebugSpeedSample(float target, float velocity)
+static void StoreFocDebugSpeedSample(float target, float velocity, float position)
 {
     gFocDebugSpeedSample.seq++;
     gFocDebugSpeedSample.target = target;
     gFocDebugSpeedSample.velocity = velocity;
+    gFocDebugSpeedSample.position = position;
     gFocDebugSpeedSample.seq++;
 }
 
-static bool LoadFocDebugSpeedSample(float& target, float& velocity)
+static bool LoadFocDebugSpeedSample(float& target, float& velocity, float& position)
 {
     uint32_t seq0 = 0;
     uint32_t seq1 = 0;
@@ -74,6 +76,7 @@ static bool LoadFocDebugSpeedSample(float& target, float& velocity)
         seq0 = gFocDebugSpeedSample.seq;
         target = gFocDebugSpeedSample.target;
         velocity = gFocDebugSpeedSample.velocity;
+        position = gFocDebugSpeedSample.position;
         seq1 = gFocDebugSpeedSample.seq;
     } while ((seq0 != seq1) || ((seq0 & 1U) != 0U));
 
@@ -143,13 +146,14 @@ static void SendSpeedFrameJustFloat500Hz()
 
     float target = 0.0f;
     float velocity = 0.0f;
-    if (!LoadFocDebugSpeedSample(target, velocity))
+    float position = 0.0f;
+    if (!LoadFocDebugSpeedSample(target, velocity, position))
     {
         return;
     }
 
     constexpr uint8_t kTail[4] = {0x00U, 0x00U, 0x80U, 0x7FU};
-    float ch[2] = {target, velocity};
+    float ch[3] = {target, velocity, position};
     uint8_t frame[sizeof(ch) + sizeof(kTail)] = {};
     memcpy(frame, ch, sizeof(ch));
     memcpy(frame + sizeof(ch), kTail, sizeof(kTail));
@@ -377,7 +381,7 @@ static void ThreadFocControl(void* argument)
             }
         }
         focMotor.Tick();
-        StoreFocDebugSpeedSample(focMotor.target, focMotor.state.estVelocity);
+        StoreFocDebugSpeedSample(focMotor.target, focMotor.state.estVelocity, focMotor.state.rawAngle);
     }
 }
 
