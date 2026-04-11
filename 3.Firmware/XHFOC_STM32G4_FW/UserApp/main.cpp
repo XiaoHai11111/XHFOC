@@ -16,7 +16,7 @@
 CmdCtrlMotor* motor = new CmdCtrlMotor( 3, true, 30, 35, 180);
 Motor focMotor = Motor(7);
 MT6816 mt6816(&hspi1);
-Timer timerCtrlLoop(&htim3, 5000);
+Timer timerCtrlLoop(&htim3, 20000);
 Driver focDriver(12.0f);
 Led statusLed;
 CurrentSense currentSense(0.001f, 20.0f);
@@ -29,136 +29,6 @@ Key key4(4,20,250,800);
 osThreadId_t focControlTaskHandle;
 osThreadId_t peripheralTaskHandle;
 
-struct FocDebugDutySample_t
-{
-    volatile uint32_t seq;
-    volatile float a;
-    volatile float b;
-    volatile float c;
-};
-
-static FocDebugDutySample_t gFocDebugDutySample = {};
-
-struct FocDebugSpeedSample_t
-{
-    volatile uint32_t seq;
-    volatile float target;
-    volatile float velocity;
-    volatile float position;
-};
-
-static FocDebugSpeedSample_t gFocDebugSpeedSample = {};
-
-extern "C" void OnFocPwmDutyUpdateFromControlLoop(float dutyA, float dutyB, float dutyC)
-{
-    gFocDebugDutySample.seq++;
-    gFocDebugDutySample.a = dutyA;
-    gFocDebugDutySample.b = dutyB;
-    gFocDebugDutySample.c = dutyC;
-    gFocDebugDutySample.seq++;
-}
-
-static void StoreFocDebugSpeedSample(float target, float velocity, float position)
-{
-    gFocDebugSpeedSample.seq++;
-    gFocDebugSpeedSample.target = target;
-    gFocDebugSpeedSample.velocity = velocity;
-    gFocDebugSpeedSample.position = position;
-    gFocDebugSpeedSample.seq++;
-}
-
-static bool LoadFocDebugSpeedSample(float& target, float& velocity, float& position)
-{
-    uint32_t seq0 = 0;
-    uint32_t seq1 = 0;
-    do
-    {
-        seq0 = gFocDebugSpeedSample.seq;
-        target = gFocDebugSpeedSample.target;
-        velocity = gFocDebugSpeedSample.velocity;
-        position = gFocDebugSpeedSample.position;
-        seq1 = gFocDebugSpeedSample.seq;
-    } while ((seq0 != seq1) || ((seq0 & 1U) != 0U));
-
-    return (seq0 != 0U);
-}
-
-static bool LoadFocDebugDutySample(float& dutyA, float& dutyB, float& dutyC)
-{
-    uint32_t seq0 = 0;
-    uint32_t seq1 = 0;
-    do
-    {
-        seq0 = gFocDebugDutySample.seq;
-        dutyA = gFocDebugDutySample.a;
-        dutyB = gFocDebugDutySample.b;
-        dutyC = gFocDebugDutySample.c;
-        seq1 = gFocDebugDutySample.seq;
-    } while ((seq0 != seq1) || ((seq0 & 1U) != 0U));
-
-    return (seq0 != 0U);
-}
-
-static void SendFocDebugFrameJustFloat500Hz()
-{
-    float dutyA = 0.0f;
-    float dutyB = 0.0f;
-    float dutyC = 0.0f;
-    if (!LoadFocDebugDutySample(dutyA, dutyB, dutyC))
-    {
-        return;
-    }
-    if (uart3StreamOutputPtr == nullptr)
-    {
-        return;
-    }
-
-    constexpr uint8_t kTail[4] = {0x00U, 0x00U, 0x80U, 0x7FU};
-    float ch[3] = {dutyA, dutyB, dutyC};
-    uint8_t frame[sizeof(ch) + sizeof(kTail)] = {};
-    memcpy(frame, ch, sizeof(ch));
-    memcpy(frame + sizeof(ch), kTail, sizeof(kTail));
-    (void)uart3StreamOutputPtr->process_bytes(frame, sizeof(frame), nullptr);
-}
-
-static void SendCurrentFrameJustFloat500Hz()
-{
-    if (uart3StreamOutputPtr == nullptr)
-    {
-        return;
-    }
-
-    const PhaseCurrent_t current = currentSense.GetPhaseCurrents();
-    constexpr uint8_t kTail[4] = {0x00U, 0x00U, 0x80U, 0x7FU};
-    float ch[3] = {current.a, current.b, current.c};
-    uint8_t frame[sizeof(ch) + sizeof(kTail)] = {};
-    memcpy(frame, ch, sizeof(ch));
-    memcpy(frame + sizeof(ch), kTail, sizeof(kTail));
-    (void)uart3StreamOutputPtr->process_bytes(frame, sizeof(frame), nullptr);
-}
-
-static void SendSpeedFrameJustFloat500Hz()
-{
-    if (uart3StreamOutputPtr == nullptr)
-    {
-        return;
-    }
-
-    float target = 0.0f;
-    float velocity = 0.0f;
-    float position = 0.0f;
-    if (!LoadFocDebugSpeedSample(target, velocity, position))
-    {
-        return;
-    }
-
-    constexpr uint8_t kTail[4] = {0x00U, 0x00U, 0x80U, 0x7FU};
-    float ch[3] = {target, velocity, position};
-    uint8_t frame[sizeof(ch) + sizeof(kTail)] = {};
-    memcpy(frame, ch, sizeof(ch));
-    memcpy(frame + sizeof(ch), kTail, sizeof(kTail));
-    (void)uart3StreamOutputPtr->process_bytes(frame, sizeof(frame), nullptr);
-}
 
 static void ReportTaskCreateFailure(const char* taskName)
 {
@@ -254,9 +124,6 @@ static void ThreadPeripheral(void* argument)
 
     for (;;)
     {
-        //SendFocDebugFrameJustFloat500Hz();通过串口打印TIM1的三路PWM占空比，查看马鞍波是否正常
-
-        SendSpeedFrameJustFloat500Hz();
         elapsedForKeys += kLoopMs;
         if (elapsedForKeys >= kTickMs)
         {
@@ -381,7 +248,6 @@ static void ThreadFocControl(void* argument)
             }
         }
         focMotor.Tick();
-        StoreFocDebugSpeedSample(focMotor.target, focMotor.state.estVelocity, focMotor.state.rawAngle);
     }
 }
 

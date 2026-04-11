@@ -11,7 +11,7 @@ class Timer
 private:
     TIM_HandleTypeDef *htim;
     uint32_t freq;
-    uint16_t PSC = 83;
+    uint16_t PSC = 143;
     uint16_t ARR = 9999;
 
     void CalcRegister(uint32_t _freqHz);

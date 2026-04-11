@@ -4,14 +4,6 @@
 #include "time_utils.h"
 #include <cmath>
 
-extern "C" __attribute__((weak)) void OnFocPwmDutyUpdateFromControlLoop(float dutyA, float dutyB, float dutyC)
-{
-    (void)dutyA;
-    (void)dutyB;
-    (void)dutyC;
-}
-
-
 bool Motor::Init(float _zeroElectricOffset, EncoderBase::Direction _encoderDir)
 {
     if (encoder)
@@ -565,52 +557,43 @@ void Motor::SetPhaseVoltage(float _voltageQ, float _voltageD, float _angleElectr
     voltageB = tB * driver->voltagePowerSupply;
     voltageC = tC * driver->voltagePowerSupply;
 
-    if (currentSense)
-    {
-        currentSense->pwmDutyA = tA;
-        currentSense->pwmDutyB = tB;
-        currentSense->pwmDutyC = tC;
-        currentSense->sector = sec;
-    }
-
-    OnFocPwmDutyUpdateFromControlLoop(tA, tB, tC);
     driver->SetVoltage(voltageA, voltageB, voltageC);
 }
 
 
-void Motor::SetTorqueLimit(float _val)
-{
-    if (driver == nullptr)
-    {
-        return;
-    }
-
-    config.voltageLimit = _val;
-    config.currentLimit = _val;
-
-    if (!currentSense && ASSERT(phaseResistance))
-    {
-        float limit = config.currentLimit * phaseResistance;
-        config.voltageLimit = limit < config.voltageLimit ? limit : config.voltageLimit;
-    }
-
-    if (config.voltageLimit > driver->voltagePowerSupply)
-        config.voltageLimit = driver->voltagePowerSupply;
-
-    if (config.voltageUsedForSensorAlign > config.voltageLimit)
-        config.voltageUsedForSensorAlign = config.voltageLimit;
-
-    if (currentSense)
-    {
-        config.pidCurrentQ.limit = config.voltageLimit;
-        config.pidCurrentD.limit = config.voltageLimit;
-        config.pidVelocity.limit = config.currentLimit;
-    } else if (ASSERT(phaseResistance))
-    {
-        config.pidVelocity.limit = config.currentLimit;
-    } else
-    {
-        config.pidVelocity.limit = config.voltageLimit;
-    }
-    config.pidAngle.limit = config.velocityLimit;
-}
+// void Motor::SetTorqueLimit(float _val)
+// {
+//     if (driver == nullptr)
+//     {
+//         return;
+//     }
+//
+//     config.voltageLimit = _val;
+//     config.currentLimit = _val;
+//
+//     if (!currentSense && ASSERT(phaseResistance))
+//     {
+//         float limit = config.currentLimit * phaseResistance;
+//         config.voltageLimit = limit < config.voltageLimit ? limit : config.voltageLimit;
+//     }
+//
+//     if (config.voltageLimit > driver->voltagePowerSupply)
+//         config.voltageLimit = driver->voltagePowerSupply;
+//
+//     if (config.voltageUsedForSensorAlign > config.voltageLimit)
+//         config.voltageUsedForSensorAlign = config.voltageLimit;
+//
+//     if (currentSense)
+//     {
+//         config.pidCurrentQ.limit = config.voltageLimit;
+//         config.pidCurrentD.limit = config.voltageLimit;
+//         config.pidVelocity.limit = config.currentLimit;
+//     } else if (ASSERT(phaseResistance))
+//     {
+//         config.pidVelocity.limit = config.currentLimit;
+//     } else
+//     {
+//         config.pidVelocity.limit = config.voltageLimit;
+//     }
+//     config.pidAngle.limit = config.velocityLimit;
+// }

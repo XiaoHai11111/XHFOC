@@ -282,50 +282,50 @@ feat(comm): 完成通信架构与功能移植，接入USB双端点并修复Nativ
 ```
 
 ```
-feat(foc): 打通电流环并实现下桥臂导通窗口电流采样触发，待实现编码器线性化校准代码，由于falsh不足更换芯片G474RET6,迁移当前代码
+refactor(foc,current-sense): 重写电流采样链路与Clarke变换，提升电流环稳定性
 
 [背景]
-- 问题/需求: 现有 FOC 已完成基础闭环框架，但电流环链路未完全打通，采样时序与 PWM 导通窗口不严格对齐，导致电流反馈抖动和控制稳定性不足。
-- 触发条件: 在速度闭环联调过程中出现异响、抖动和发热，需优先完善“电流采样 -> dq 电流计算 -> 电流 PI 输出”闭环路径。
+- 问题/需求: 现有电流采样与电流解算链路存在抖动/卡动风险，低边采样在部分工况下重构误差较大。
+- 触发条件: 联调过程中出现电流波形不稳与异响，需要重构采样与αβ变换实现。
 
 [改动]
-- 关键实现:
-	- 打通电流环控制链路：采样 -> Clarke/Park -> Id/Iq PI -> 电压指令输出。
-	- 将电流采样改为事件触发（注入组），在下桥臂导通窗口进行采样，降低开关噪声耦合与采样相位误差。
-	- 通过定时器事件捕获触发 ADC 注入转换，保证采样时刻与 PWM 同步。
-	- 完善电流环相关限幅与滤波参数衔接，提升闭环可控性。
-- 涉及文件（按实际提交为准）:
-	- Core/Inc/adc.h
-	- Core/Src/adc.c
-	- Core/Src/tim.c
-	- Platform/Driver/driver.cpp
-	- Platform/Sensor/CurrentSense/current_sense.cpp
-	- Ctrl/Sensor/CurrentSense/*
-	- Ctrl/Motor/motor.cpp
-	- UserApp/main.cpp
+- 修改内容:
+  - 重写电流采样流程，统一采样数据入口与相电流获取逻辑。
+  - 重写 Clarke 变换实现，规范 abc->αβ 计算路径，减少零漂/偏置对电流环影响。
+  - 调整采样到控制的调用时序：在电流采样完成后触发 FOC 计算，避免采样与控制脱节。
+  - 清理/移除旧的低边单相丢失重构分支，降低分支复杂度与误判概率。
+- 修改文件:
+  - Ctrl/Sensor/CurrentSense/current_sense_base.cpp
+  - Ctrl/Sensor/CurrentSense/current_sense_base.h
+  - Platform/Sensor/CurrentSense/current_sense.cpp
+  - Ctrl/Motor/motor.cpp
+  - （如涉及触发链路）Core/Src/adc.c、Core/Src/tim.c、UserApp/main.cpp
+- 关键点:
+  - 采样结果统一用于 FOC 电流解算入口（dq 计算前的数据一致性更高）。
+  - Clarke 变换与相电流重构逻辑分层明确，便于后续维护与参数标定。
+  - 控制主循环保持实时性，未引入额外阻塞路径。
 
 [影响评估]
-- 硬件影响: 无新增硬件连接，复用现有三相采样与 PWM 驱动链路。
-- 实时性影响: 采样触发与 PWM 同步后，电流环时序更稳定；中断与计算负载小幅上升但在可控范围内。
-- 资源影响: 代码体积小幅增加，Flash/RAM 占用略增。
-- 兼容性影响: 保持现有工程架构与 CubeMX 生成流程兼容。
+- 硬件影响: 无新增硬件依赖，继续使用现有电流采样与编码器链路。
+- 实时性影响: 采样-控制链路更紧凑，减少相位延迟；电流环响应更一致。
+- 资源影响: 代码结构调整为主，体积变化有限。
+- 兼容性影响: 不改变外部通信协议；主要影响内部电流解算与控制行为。
 
 [验证]
-- 构建: cmake --preset Debug && cmake --build --preset Debug -j 8
+- 构建:
+  - [x] `cmake --preset Release`
+  - [x] `cmake --build --preset Release -j 8`
 - 板测:
-	- [x] ADC 注入采样可被事件稳定触发
-	- [x] 采样时刻位于下桥臂导通窗口
-	- [x] 电流环闭环链路可正常运行
-	- [x] 电机运行稳定性较改动前提升（抖动/异响减轻）
+  - [x] 电机启动与低速运行无明显卡死
+  - [x] 电流环运行稳定，D/Q 电流波动收敛改善
+  - [x] 采样触发与控制调用时序符合预期（采样完成后执行控制）
 
 [回滚]
-- git revert <this_commit_hash>
+- `git revert <this_commit_hash>`
 - 重点回滚文件:
-	- Core/Src/adc.c
-	- Core/Src/tim.c
-	- Platform/Driver/driver.cpp
-	- Platform/Sensor/CurrentSense/current_sense.cpp
-	- Ctrl/Motor/motor.cpp
+  - Ctrl/Sensor/CurrentSense/current_sense_base.cpp
+  - Platform/Sensor/CurrentSense/current_sense.cpp
+  - Ctrl/Motor/motor.cpp
 ```
 
 

@@ -30,7 +30,6 @@ public:
         config.pidAngle = PidController{20.0f, 0, 0, 0, 20.0f};
     }
 
-
     enum ControlMode_t
     {
         TORQUE,
