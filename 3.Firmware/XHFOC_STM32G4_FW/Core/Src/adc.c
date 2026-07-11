@@ -23,7 +23,7 @@
 /* USER CODE BEGIN 0 */
 enum
 {
-    ADC1_REGULAR_CHANNEL_COUNT = 4,
+    ADC1_REGULAR_CHANNEL_COUNT = 1,
     ADC2_REGULAR_CHANNEL_COUNT = 5
 };
 
@@ -32,7 +32,8 @@ static uint16_t adc2_regular_dma_buf[ADC2_REGULAR_CHANNEL_COUNT] = {0};
 static bool adc_dma_started = false;
 static bool adc_injected_started = false;
 static uint16_t adc1_injected_raw[3] = {0, 0, 0};
-static bool adc1_injected_valid = false;
+// static bool adc1_injected_valid = false;
+extern void OnFocTimerElapsedFromISR(void);
 
 static uint16_t adc_read_signal_raw(AdcSignal_t signal)
 {
@@ -42,10 +43,10 @@ static uint16_t adc_read_signal_raw(AdcSignal_t signal)
     // rank1: ADC_CHANNEL_1 -> M0_IC
     // rank2: ADC_CHANNEL_2 -> M0_IB
     // rank3: ADC_CHANNEL_3 -> M0_IA
-    case ADC_SIGNAL_IA: return adc1_regular_dma_buf[2];
-    case ADC_SIGNAL_IB: return adc1_regular_dma_buf[1];
-    case ADC_SIGNAL_IC: return adc1_regular_dma_buf[0];
-    case ADC_SIGNAL_NTC: return adc1_regular_dma_buf[3];
+    // case ADC_SIGNAL_IA: return adc1_regular_dma_buf[2];
+    // case ADC_SIGNAL_IB: return adc1_regular_dma_buf[1];
+    // case ADC_SIGNAL_IC: return adc1_regular_dma_buf[0];
+    case ADC_SIGNAL_NTC: return adc1_regular_dma_buf[0];
     case ADC_SIGNAL_VA: return adc2_regular_dma_buf[0];
     case ADC_SIGNAL_VB: return adc2_regular_dma_buf[1];
     case ADC_SIGNAL_VC: return adc2_regular_dma_buf[2];
@@ -55,24 +56,24 @@ static uint16_t adc_read_signal_raw(AdcSignal_t signal)
   }
 }
 
-static void adc_update_injected_snapshot(void)
-{
-  if ((!adc_injected_started) || (hadc1.Instance == NULL))
-  {
-    return;
-  }
-
-  // Injected ranks keep the same channel order as configured:
-  // JDR1: IC, JDR2: IB, JDR3: IA
-  adc1_injected_raw[0] = (uint16_t)(hadc1.Instance->JDR3 & 0xFFFFU); // IA
-  adc1_injected_raw[1] = (uint16_t)(hadc1.Instance->JDR2 & 0xFFFFU); // IB
-  adc1_injected_raw[2] = (uint16_t)(hadc1.Instance->JDR1 & 0xFFFFU); // IC
-
-  if ((adc1_injected_raw[0] != 0U) || (adc1_injected_raw[1] != 0U) || (adc1_injected_raw[2] != 0U))
-  {
-    adc1_injected_valid = true;
-  }
-}
+// static void adc_update_injected_snapshot(void)
+// {
+//   if ((!adc_injected_started) || (hadc1.Instance == NULL))
+//   {
+//     return;
+//   }
+//
+//   // Injected ranks keep the same channel order as configured:
+//   // JDR1: IC, JDR2: IB, JDR3: IA
+//   adc1_injected_raw[0] = (uint16_t)(hadc1.Instance->JDR3 & 0xFFFFU); // IA
+//   adc1_injected_raw[1] = (uint16_t)(hadc1.Instance->JDR2 & 0xFFFFU); // IB
+//   adc1_injected_raw[2] = (uint16_t)(hadc1.Instance->JDR1 & 0xFFFFU); // IC
+//
+//   if ((adc1_injected_raw[0] != 0U) || (adc1_injected_raw[1] != 0U) || (adc1_injected_raw[2] != 0U))
+//   {
+//     adc1_injected_valid = true;
+//   }
+// }
 
 /* USER CODE END 0 */
 
@@ -172,7 +173,10 @@ void MX_ADC1_Init(void)
   */
   sConfigInjected.InjectedChannel = ADC_CHANNEL_1;
   sConfigInjected.InjectedRank = ADC_INJECTED_RANK_1;
-  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_2CYCLES_5;
+  /* 2.5 ADC cycles (~59 ns @ 42.5 MHz) is far too short for the shunt-amp
+     output to settle into the ADC sample&hold, which attenuates the reading
+     unevenly across phases and breaks iA+iB+iC=0. Use a longer sample time. */
+  sConfigInjected.InjectedSamplingTime = ADC_SAMPLETIME_24CYCLES_5;
   sConfigInjected.InjectedSingleDiff = ADC_SINGLE_ENDED;
   sConfigInjected.InjectedOffsetNumber = ADC_OFFSET_NONE;
   sConfigInjected.InjectedOffset = 0;
@@ -574,7 +578,7 @@ void AdcStartDmaSampling(void)
   }
 
   adc_injected_started = false;
-  adc1_injected_valid = false;
+  // adc1_injected_valid = false;
   if (HAL_ADCEx_InjectedStart_IT(&hadc1) == HAL_OK)
   {
     adc_injected_started = true;
@@ -605,15 +609,16 @@ bool AdcGetInjectedPhaseCurrentsRaw(uint16_t* ia, uint16_t* ib, uint16_t* ic)
     return false;
   }
 
-  adc_update_injected_snapshot();
+  // adc_update_injected_snapshot();
   *ia = adc1_injected_raw[0];
   *ib = adc1_injected_raw[1];
   *ic = adc1_injected_raw[2];
-  return adc1_injected_valid;
+  return true;
 }
 
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
+  //20kHz回调频率
   if ((hadc == NULL) || (hadc->Instance != ADC1))
   {
     return;
@@ -622,7 +627,8 @@ void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
   adc1_injected_raw[0] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_3); // IA
   adc1_injected_raw[1] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_2); // IB
   adc1_injected_raw[2] = (uint16_t)HAL_ADCEx_InjectedGetValue(&hadc1, ADC_INJECTED_RANK_1); // IC
-  adc1_injected_valid = true;
+  // adc1_injected_valid = true;
+  OnFocTimerElapsedFromISR();
 }
 
 float AdcRawToVoltage(uint16_t raw)

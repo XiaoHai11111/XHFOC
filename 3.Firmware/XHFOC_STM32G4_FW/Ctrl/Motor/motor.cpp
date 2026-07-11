@@ -127,6 +127,21 @@ void Motor::Tick()
     FocOutputTick();
 }
 
+float Motor::GetLastEstimateAngle() const
+{
+    return state.estAngle;
+}
+
+float Motor::GetLastEstimateVelocity() const
+{
+    return state.estVelocity;
+}
+
+DqCurrent_t Motor::GetLastDqCurrent() const
+{
+    return current;
+}
+
 void Motor::SetControlLoopHz(float _hz)
 {
     if (_hz > 1.0f)

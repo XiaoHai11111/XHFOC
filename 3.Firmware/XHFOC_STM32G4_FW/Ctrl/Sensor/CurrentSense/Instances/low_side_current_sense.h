@@ -14,6 +14,8 @@ public:
         CH_C = 2
     };
 
+    uint16_t rawAdcVal[3] = {0, 0, 0};
+
     LowSideCurrentSenseBase(float shuntResistor, float gain);
 
     void Init() override;
@@ -25,7 +27,8 @@ public:
 
 protected:
     virtual void InitAdc() = 0;
-    virtual float GetAdcToVoltage(Channel_t channel) = 0;
+    virtual void RefreshAdcSample() = 0;
+    virtual float GetAdcToVoltage(uint16_t raw) = 0;
 
 private:
     float shuntResistor = 0.0f;

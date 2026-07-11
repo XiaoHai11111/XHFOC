@@ -9,25 +9,42 @@
 #include "key_stm32.h"
 #include "current_sense.h"
 #include "adspe_sense.h"
-#include "timer.hpp"
+#include "vofa_debug.h"
 #include <cstring>
 
 /* Default Entry -------------------------------------------------------*/
 CmdCtrlMotor* motor = new CmdCtrlMotor( 3, true, 30, 35, 180);
 Motor focMotor = Motor(7);
 MT6816 mt6816(&hspi1);
-Timer timerCtrlLoop(&htim3, 20000);
 Driver focDriver(12.0f);
 Led statusLed;
-CurrentSense currentSense(0.001f, 20.0f);
+CurrentSense currentSense(0.001f, 62.0f);
 AdspeSense adspeSense;
 Key key1(1,20,250,800);
 Key key2(2,20,250,800);
 Key key3(3,20,250,800);
 Key key4(4,20,250,800);
 
+
+
 osThreadId_t focControlTaskHandle;
 osThreadId_t peripheralTaskHandle;
+osThreadId_t vofaTaskHandle;
+
+static volatile bool gFocTickEnabled = false;
+VofaDebug vofaDebug;
+
+extern "C" void OnFocTimerElapsedFromISR(void)
+{
+    if (focControlTaskHandle == nullptr)
+    {
+        return;
+    }
+
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(TaskHandle_t(focControlTaskHandle), &xHigherPriorityTaskWoken);
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
 
 
 static void ReportTaskCreateFailure(const char* taskName)
@@ -70,34 +87,6 @@ static void OnKeyEvent(uint8_t keyId, KeyBase::Event event)
     Respond(*uart3StreamOutputPtr, "[key] KEY%u %s", keyId, KeyEventToString(event));
 }
 
-static float Clamp01(float v)
-{
-    if (v < 0.0f) return 0.0f;
-    if (v > 1.0f) return 1.0f;
-    return v;
-}
-
-static float ApplyCenterDeadband(float value, float center, float deadband)
-{
-    value = Clamp01(value);
-    center = Clamp01(center);
-    deadband = Clamp01(deadband);
-
-    const float posStart = center + deadband;
-    const float negStart = center - deadband;
-
-    if (value > posStart)
-    {
-        const float denom = (1.0f - posStart);
-        return (denom > 1e-6f) ? ((value - posStart) / denom) : 0.0f;
-    }
-    if (value < negStart)
-    {
-        const float denom = negStart;
-        return (denom > 1e-6f) ? (-(negStart - value) / denom) : 0.0f;
-    }
-    return 0.0f;
-}
 
 static void ThreadPeripheral(void* argument)
 {
@@ -156,111 +145,96 @@ static void ThreadFocControl(void* argument)
 {
     (void)argument;
 
-    constexpr uint32_t kControlLoopHz = 5000U;
-    constexpr float kLoopTargetMaxVelocity = 250.0f;   // mechanical rad/s
-    constexpr float kAdspeCenter = 0.5f;         // knob center
-    constexpr float kAdspeDeadband = 0.03f;      // center deadband
-    constexpr float kAdspeFilterAlpha = 0.02f;   // smooth target updates
-    constexpr float kVelocityTargetRamp = 200.0f; // rad/s^2
-    constexpr float kZeroSpeedDisable = 1.0f;     // rad/s
-    constexpr bool kAdspeInvert = false;
-    constexpr bool kInvertCurrentSense = true;
-
-    const auto ReadAdspeSigned = []() -> float
-    {
-        float norm = (float)adspeSense.GetRaw() / 4095.0f;
-        norm = Clamp01(norm);
-        float signedCmd = ApplyCenterDeadband(norm, kAdspeCenter, kAdspeDeadband);
-        if (kAdspeInvert) signedCmd = -signedCmd;
-        return signedCmd;
-    };
-
-    focMotor.SetControlLoopHz((float)kControlLoopHz);
     focMotor.AttachDriver(&focDriver);
     focMotor.AttachEncoder(&mt6816);
     focMotor.AttachCurrentSense(&currentSense);
-    if (kInvertCurrentSense)
-    {
-        if (currentSense.gainA > 0.0f) currentSense.gainA = -currentSense.gainA;
-        if (currentSense.gainB > 0.0f) currentSense.gainB = -currentSense.gainB;
-        if (currentSense.gainC > 0.0f) currentSense.gainC = -currentSense.gainC;
-    }
-    adspeSense.Init();
-    focMotor.config.controlMode = Motor::VELOCITY;
-    focMotor.config.voltageLimit = 12.0f;
-    focMotor.config.currentLimit = 5.0f;
-    focMotor.config.voltageUsedForSensorAlign = 2.0f;
-    focMotor.config.velocityLimit = kLoopTargetMaxVelocity;
-    focMotor.config.lpfCurrentQ = LowPassFilter{0.0005f};
-    focMotor.config.lpfCurrentD = LowPassFilter{0.0005f};
-    focMotor.config.lpfVelocity = LowPassFilter{0.06f};
-    focMotor.config.pidCurrentQ = PidController{0.015f, 35.0f, 0.0f, 0.0f, focMotor.config.voltageLimit};
-    focMotor.config.pidCurrentD = PidController{0.01f, 20.0f, 0.0f, 0.0f, focMotor.config.voltageLimit};
-    focMotor.config.pidVelocity = PidController{0.01f, 0.02f, 0.0f, 80.0f, focMotor.config.currentLimit};
+    if (currentSense.gainA > 0.0f) currentSense.gainA = -currentSense.gainA;
+    if (currentSense.gainB > 0.0f) currentSense.gainB = -currentSense.gainB;
+    if (currentSense.gainC > 0.0f) currentSense.gainC = -currentSense.gainC;
+
+    focMotor.config.controlMode = Motor::TORQUE;
+    focMotor.target = 1.0f;
+
+    // Current loop runs once per PWM period (TIM1 10 kHz center-aligned),
+    // so dt = 100 us; velocity loop is auto-decimated to 1 kHz internally.
+    focMotor.SetControlLoopHz(10000.0f);
 
     const bool focInitOk = focMotor.Init();
-    Respond(*uart3StreamOutputPtr, "[foc] init=%d mode=%d calib=%d err=%d",
+    Respond(*uart3StreamOutputPtr,
+            "[foc] init=%d err=%d calib=%d noMag=%d csum=%d target=%.3f",
             focInitOk ? 1 : 0,
-            static_cast<int>(focMotor.config.controlMode),
+            static_cast<int>(focMotor.error),
             mt6816.IsCalibrated() ? 1 : 0,
-            static_cast<int>(focMotor.error));
+            mt6816.IsNoMagnetDetected() ? 1 : 0,
+            mt6816.IsChecksumValid() ? 1 : 0,
+            (double)focMotor.target);
 
     if (focInitOk)
     {
-        focMotor.target = 0.0f;
-        focMotor.SetEnable(false);
-        Respond(*uart3StreamOutputPtr, "[foc] enabled target=%.3f", (double)focMotor.target);
+        focMotor.SetEnable(true);
+        // Alignment is done (used blocking encoder reads); switch the encoder to
+        // the non-blocking pipeline so the high-rate FOC loop never waits on SPI.
+        mt6816.EnableAsyncRead(true);
+        gFocTickEnabled = true;
+        Respond(*uart3StreamOutputPtr, "[foc] enabled");
     }
     else
     {
         focMotor.SetEnable(false);
+        gFocTickEnabled = false;
         Respond(*uart3StreamOutputPtr,
                 "[foc] init failed, tim1_state=%d arr=%lu",
                 (int)htim1.State,
                 (unsigned long)__HAL_TIM_GET_AUTORELOAD(&htim1));
     }
 
-    float adspeSignedFiltered = ReadAdspeSigned();
     for (;;)
     {
-        // Control loop is triggered by TIM3 update interrupt at 5 kHz.
+        // Control loop is triggered by ADC injected conversion complete interrupt.
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        if (focInitOk)
-        {
-            const float adspeSigned = ReadAdspeSigned();
-            adspeSignedFiltered += (adspeSigned - adspeSignedFiltered) * kAdspeFilterAlpha;
-            const float targetCmd = adspeSignedFiltered * kLoopTargetMaxVelocity;
-            const float absTargetCmd = (targetCmd >= 0.0f) ? targetCmd : -targetCmd;
-
-            if (absTargetCmd < kZeroSpeedDisable)
-            {
-                focMotor.target = 0.0f;
-                focMotor.SetEnable(false);
-            }
-            else
-            {
-                focMotor.SetEnable(true);
-                const float stepMax = kVelocityTargetRamp / (float)kControlLoopHz;
-                float delta = targetCmd - focMotor.target;
-                if (delta > stepMax) delta = stepMax;
-                if (delta < -stepMax) delta = -stepMax;
-                focMotor.target += delta;
-            }
-        }
-        focMotor.Tick();
+        if (gFocTickEnabled) focMotor.Tick();
     }
 }
 
-/* Timer Callbacks -------------------------------------------------------*/
-void OnTimerCallback()
+static void ThreadVofa(void* argument)
 {
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    (void)argument;
 
-    // Wake & invoke thread IMMEDIATELY.
-    vTaskNotifyGiveFromISR(TaskHandle_t(focControlTaskHandle), &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    constexpr uint32_t kVofaPeriodMs = 1U; // 500Hz
+    constexpr size_t kVofaChannelCount = 16U;
+    float channels[kVofaChannelCount] = {0.0f};
+
+    for (;;)
+    {
+        vofaDebug.SetOutput(uart3StreamOutputPtr);
+
+        const PhaseCurrent_t phaseCurrent = currentSense.GetLastPhaseCurrents();
+        const AlphaBetaCurrent_t alphaBetaCurrent = currentSense.GetLastAlphaBetaCurrents();
+        const DqCurrent_t dqCurrent = focMotor.GetLastDqCurrent();
+
+        // Channel order:
+        // dutyA, dutyB, dutyC, iA, iB, iC, iAlpha, iBeta, iq, id, position, velocity, target, adcRawIa, adcRawIb, adcRawIc
+        channels[0] = focDriver.dutyA;
+        channels[1] = focDriver.dutyB;
+        channels[2] = focDriver.dutyC;
+        channels[3] = phaseCurrent.a;
+        channels[4] = phaseCurrent.b;
+        channels[5] = phaseCurrent.c;
+        channels[6] = alphaBetaCurrent.iAlpha;
+        channels[7] = alphaBetaCurrent.iBeta;
+        channels[8] = dqCurrent.q;
+        channels[9] = dqCurrent.d;
+        channels[10] = focMotor.GetLastEstimateAngle();
+        channels[11] = focMotor.GetLastEstimateVelocity();
+        channels[12] = focMotor.target;
+        channels[13] = static_cast<float>(currentSense.rawAdcVal[0]);
+        channels[14] = static_cast<float>(currentSense.rawAdcVal[1]);
+        channels[15] = static_cast<float>(currentSense.rawAdcVal[2]);
+
+        (void)vofaDebug.SendJustFloat(channels, kVofaChannelCount);
+        osDelay(kVofaPeriodMs);
+    }
 }
-
 
 void Main(void)
 {
@@ -283,16 +257,11 @@ void Main(void)
     {
         ReportTaskCreateFailure("focControlTask");
     }
-    else
-    {
-        timerCtrlLoop.SetCallback(OnTimerCallback);
-        timerCtrlLoop.Start();
-    }
 
     const osThreadAttr_t peripheralTask_attributes = {
         .name = "peripheralTask",
         .stack_size = 1024,
-        .priority = (osPriority_t)osPriorityLow,
+        .priority = (osPriority_t)osPriorityNormal,
     };
     peripheralTaskHandle = osThreadNew(ThreadPeripheral, nullptr, &peripheralTask_attributes);
     if (peripheralTaskHandle == nullptr)
@@ -300,4 +269,14 @@ void Main(void)
         ReportTaskCreateFailure("peripheralTask");
     }
 
+    const osThreadAttr_t vofaTask_attributes = {
+        .name = "vofaTask",
+        .stack_size = 1024,
+        .priority = (osPriority_t)osPriorityNormal,
+    };
+    vofaTaskHandle = osThreadNew(ThreadVofa, nullptr, &vofaTask_attributes);
+    if (vofaTaskHandle == nullptr)
+    {
+        ReportTaskCreateFailure("vofaTask");
+    }
 }

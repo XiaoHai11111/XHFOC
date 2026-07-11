@@ -2,6 +2,7 @@
 #define XHFOC_CURRENT_SENSE_BASE_H
 
 #include <cstdint>
+#include "adc.h"
 #include "math_utils.h"
 
 class CurrentSenseBase
@@ -15,10 +16,14 @@ public:
     virtual void Init() = 0;
     virtual PhaseCurrent_t GetPhaseCurrents() = 0;
     DqCurrent_t GetFocCurrents(float angleElectrical);
+    PhaseCurrent_t GetLastPhaseCurrents() const;
+    AlphaBetaCurrent_t GetLastAlphaBetaCurrents() const;
+    DqCurrent_t GetLastDqCurrents() const;
 
 protected:
-    float iAlpha = 0.0f;
-    float iBeta = 0.0f;
+    AlphaBetaCurrent_t alphaBetaCurrent_{};
+    PhaseCurrent_t lastPhaseCurrent_{};
+    DqCurrent_t lastDqCurrent_{};
 };
 
 #endif

@@ -87,7 +87,12 @@ void HAL_SPI_MspInit(SPI_HandleTypeDef* spiHandle)
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN SPI1_MspInit 1 */
-
+    /* Enable SPI1 global interrupt for the non-blocking (interrupt-driven)
+       MT6816 encoder read. Handled by SPI1_IRQHandler() in stm32g4xx_it.c.
+       NOTE: if you later enable SPI1 global interrupt in CubeMX, remove the
+       manual SPI1_IRQHandler() in stm32g4xx_it.c to avoid a duplicate symbol. */
+    HAL_NVIC_SetPriority(SPI1_IRQn, 5, 0);
+    HAL_NVIC_EnableIRQ(SPI1_IRQn);
   /* USER CODE END SPI1_MspInit 1 */
   }
 }

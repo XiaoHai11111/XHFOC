@@ -45,6 +45,12 @@ private:
 protected:
     float GetRawAngle() override;
 
+    // Interpret a 16-bit MT6816 sample (parity check + optional calibration).
+    // Updates angleData/spiRawData and returns true only when parity is valid;
+    // on failure it keeps the previous good angle. Shared by the blocking init
+    // path and the non-blocking (interrupt-driven) runtime path.
+    bool ApplyRawData(uint16_t rawData16);
+
 private:
     void ReadRawData();
 

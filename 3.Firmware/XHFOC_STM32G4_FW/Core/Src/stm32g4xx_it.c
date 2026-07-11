@@ -52,7 +52,16 @@
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+extern SPI_HandleTypeDef hspi1;
 
+/* Non-blocking MT6816 encoder read: SPI1 global interrupt service routine.
+   NOTE: SPI1 global interrupt is enabled manually in spi.c (HAL_SPI_MspInit).
+   If you enable it via CubeMX instead, delete this handler to avoid a
+   duplicate SPI1_IRQHandler definition. */
+void SPI1_IRQHandler(void)
+{
+  HAL_SPI_IRQHandler(&hspi1);
+}
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -65,6 +74,7 @@ extern DMA_HandleTypeDef hdma_tim2_ch1;
 extern UART_HandleTypeDef huart3;
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim6;
+extern TIM_HandleTypeDef htim7;
 
 /* USER CODE BEGIN EV */
 
@@ -293,6 +303,20 @@ void TIM6_DAC_IRQHandler(void)
   /* USER CODE BEGIN TIM6_DAC_IRQn 1 */
 
   /* USER CODE END TIM6_DAC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM7 global interrupt.
+  */
+void TIM7_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM7_IRQn 0 */
+
+  /* USER CODE END TIM7_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim7);
+  /* USER CODE BEGIN TIM7_IRQn 1 */
+
+  /* USER CODE END TIM7_IRQn 1 */
 }
 
 /* USER CODE BEGIN 1 */

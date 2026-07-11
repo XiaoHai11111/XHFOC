@@ -20,7 +20,7 @@ bool Driver::ConfigTimerForPwm()
 
     bool ok = true;
     // Match reference project timing: trigger ADC injected conversion near PWM period end.
-    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, (uint16_t)(PERIOD_COUNT - 10));
+    __HAL_TIM_SET_COMPARE(&htim1, TIM_CHANNEL_4, (uint16_t)(2*PERIOD_COUNT/3));
     ok = ok && (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1) == HAL_OK);
     ok = ok && (HAL_TIMEx_PWMN_Start(&htim1, TIM_CHANNEL_1) == HAL_OK);
     ok = ok && (HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2) == HAL_OK);

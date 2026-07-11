@@ -11,23 +11,20 @@
 class Motor
 {
 public:
-    explicit Motor(int _polePairs, float _phaseResistance = NOT_SET) :
-        polePairs(_polePairs), phaseResistance(_phaseResistance)
+    explicit Motor(int _polePairs) :polePairs(_polePairs)
     {
-        config.controlMode = ANGLE;
-        config.voltageUsedForSensorAlign =1.0f;
+        config.controlMode = TORQUE;
+        config.voltageUsedForSensorAlign =2.0f;
         config.voltageLimit = 12.0f;
-        config.currentLimit = 0.2f;
-        config.velocityLimit = 20.0f;
+        config.currentLimit = 1.0f;
+        config.velocityLimit = 500.0f;
 
-        config.lpfCurrentQ = LowPassFilter{0.005f};
-        config.lpfCurrentD = LowPassFilter{0.005f};
-        config.lpfVelocity = LowPassFilter{0.1f};
-        config.lpfAngle = LowPassFilter{0.03f};
-        config.pidCurrentQ = PidController{3, 300.0f, 0.0f, 0, 12.0f};
-        config.pidCurrentD = PidController{3, 300.0f, 0.0f, 0, 12.0f};
-        config.pidVelocity = PidController{0.5f, 10.0f, 0.0f, 1000.0f, 12.0f};
-        config.pidAngle = PidController{20.0f, 0, 0, 0, 20.0f};
+        config.lpfCurrentQ = LowPassFilter{0.0005f};
+        config.lpfCurrentD = LowPassFilter{0.0005f};
+        config.lpfVelocity = LowPassFilter{0.06f};
+        config.pidCurrentQ = PidController{0.015f, 35.0f, 0.0f, 0.0f, 12.0f};
+        config.pidCurrentD = PidController{0.01f, 20.0f, 0.0f, 0.0f, 12.0f};
+        config.pidVelocity = PidController{0.01f, 0.02f, 0.0f, 80.0f, 12.0f};
     }
 
     enum ControlMode_t
@@ -93,6 +90,9 @@ public:
     void Tick();
     void SetTorqueLimit(float _val);
     void SetControlLoopHz(float _hz);
+    float GetLastEstimateAngle() const;
+    float GetLastEstimateVelocity() const;
+    DqCurrent_t GetLastDqCurrent() const;
 
 
     float target = 0;
@@ -101,6 +101,7 @@ public:
     State_t state{};
     DqVoltage_t voltage{};
     DqCurrent_t current{};
+    AlphaBetaVoltage_t alphaBetaVoltage{};
     float zeroElectricAngleOffset = NOT_SET;
     CurrentSenseBase* currentSense = nullptr;
     DriverBase* driver = nullptr;
@@ -119,6 +120,7 @@ private:
 
     bool enabled = false;
     float phaseResistance = NOT_SET;
+
     int polePairs = 7;
     float voltageA{}, voltageB{}, voltageC{};
     float estimateAngle{};
@@ -132,6 +134,8 @@ private:
     float controlLoopDeltaT_ = 0.0f;
     uint16_t velocityLoopDecimation_ = 1;
     uint16_t velocityLoopCounter_ = 0;
+    uint16_t positionLoopDecimation_ = 1;
+    uint16_t positionLoopCounter_ = 0;
     float currentSetpointRamp_ = 600.0f; // A/s
 };
 

@@ -8,6 +8,7 @@ class EncoderBase
 public:
     typedef struct
     {
+        //TODO:高精度编码器时需要通过高精度编码器校准MT6816
         uint16_t rawAngle;          // raw data
         uint16_t rectifiedAngle;    // calibrated rawAngle data
         bool rectifyValid;

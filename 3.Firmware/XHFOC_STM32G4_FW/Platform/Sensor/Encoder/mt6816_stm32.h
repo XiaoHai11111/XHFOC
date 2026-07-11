@@ -17,13 +17,43 @@ public:
         spiHandle(_spiHandle)
     {}
 
+    // Called from the SPI1 interrupt (HAL_SPI_TxRxCpltCallback) to advance the
+    // non-blocking read state machine. Public so the ISR shim can reach it.
+    void OnSpiTxRxComplete();
+
+    // Enable the non-blocking (pipelined) read path. Must stay disabled during
+    // init/sensor alignment (sparse reads need fresh, synchronous values);
+    // enable it once the high-rate FOC loop starts.
+    void EnableAsyncRead(bool _enable) { asyncEnabled_ = _enable; }
+
 
 private:
+    enum SpiState_t
+    {
+        MT_IDLE = 0,
+        MT_FRAME0,
+        MT_FRAME1
+    };
+
     SPI_HandleTypeDef* spiHandle = nullptr;
+
+    // Non-blocking (interrupt-driven) read pipeline state.
+    volatile SpiState_t spiState_ = MT_IDLE;
+    uint16_t txFrame_[2] = { (uint16_t) ((0x80 | 0x03) << 8),
+                             (uint16_t) ((0x80 | 0x04) << 8) };
+    uint16_t rxFrame_[2] = {0, 0};
+    volatile uint16_t asyncRawData_ = 0;
+    volatile bool sampleReady_ = false;
+    bool asyncEnabled_ = false;
 
     void SpiInit() override;
 
     uint16_t SpiTransmitAndRead16Bits(uint16_t _data) override;
+
+    // Runtime path: consume the last completed background sample and immediately
+    // start the next transfer, so the FOC loop never busy-waits on SPI.
+    float GetRawAngle() override;
+    void StartRead();
 };
 
 #endif

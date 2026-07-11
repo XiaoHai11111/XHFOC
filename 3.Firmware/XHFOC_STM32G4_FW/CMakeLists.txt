@@ -79,6 +79,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Signal/LED/led_stm32.cpp
     Platform/Utils/time_utils.cpp
     Platform/Timer/timer.cpp
+    Platform/Vofa/vofa_debug.cpp
 
     UserApp/main.cpp
     UserApp/protocols/ascii_protocol.cpp
@@ -115,6 +116,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Signal/LED
     Platform/Utils
     Platform/Timer
+    Platform/Vofa
 
     UserApp
     UserApp/protocols

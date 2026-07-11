@@ -6,31 +6,22 @@ void CurrentSense::InitAdc()
     // ADC DMA is started globally in AdcStartDmaSampling().
 }
 
-float CurrentSense::GetAdcToVoltage(Channel_t channel)
+void CurrentSense::RefreshAdcSample()
 {
-    if (channel == CH_A)
-    {
-        uint16_t ia = 0;
-        uint16_t ib = 0;
-        uint16_t ic = 0;
-        if (AdcGetInjectedPhaseCurrentsRaw(&ia, &ib, &ic))
-        {
-            rawAdcVal[CH_A] = ia;
-            rawAdcVal[CH_B] = ib;
-            rawAdcVal[CH_C] = ic;
-        }
-        else
-        {
-            rawAdcVal[CH_A] = AdcGetRaw(ADC_SIGNAL_IA);
-            rawAdcVal[CH_B] = AdcGetRaw(ADC_SIGNAL_IB);
-            rawAdcVal[CH_C] = AdcGetRaw(ADC_SIGNAL_IC);
-        }
-    }
+    uint16_t ia = 0;
+    uint16_t ib = 0;
+    uint16_t ic = 0;
 
-    if (channel > CH_C)
+    // Use synchronized injected sampling for all three phases.
+    if (AdcGetInjectedPhaseCurrentsRaw(&ia, &ib, &ic))
     {
-        channel = CH_A;
+        rawAdcVal[CH_A] = ia;
+        rawAdcVal[CH_B] = ib;
+        rawAdcVal[CH_C] = ic;
     }
+}
 
-    return AdcRawToVoltage(rawAdcVal[channel]);
+float CurrentSense::GetAdcToVoltage(uint16_t raw)
+{
+    return AdcRawToVoltage(raw);
 }

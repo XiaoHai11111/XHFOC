@@ -29,6 +29,11 @@ struct DqCurrent_t
     float q = 0;
 };
 
+struct AlphaBetaCurrent_t
+{
+    float iAlpha = 0;
+    float iBeta = 0;
+};
 
 struct PhaseCurrent_t
 {
@@ -37,11 +42,16 @@ struct PhaseCurrent_t
     float c = 0;
 };
 
-
 struct DqVoltage_t
 {
     float d = 0;
     float q = 0;
+};
+
+struct AlphaBetaVoltage_t
+{
+    float vAlpha = 0;
+    float vBeta = 0;
 };
 
 

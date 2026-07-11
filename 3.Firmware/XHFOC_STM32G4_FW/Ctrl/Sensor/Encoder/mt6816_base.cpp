@@ -32,18 +32,35 @@ bool MT6816Base::Init()
 uint16_t MT6816Base::UpdateAngle()
 {
     ReadRawData();
-
-    if (angleData.rectifyValid)
-    {
-        angleData.rectifiedAngle = quickCaliDataPtr[angleData.rawAngle];
-    }
-    else
-    {
-        // Fallback to raw angle if no calibration table available.
-        angleData.rectifiedAngle = angleData.rawAngle;
-    }
-
     return angleData.rectifiedAngle;
+}
+
+bool MT6816Base::ApplyRawData(uint16_t rawData16)
+{
+    spiRawData.rawData = rawData16;
+
+    //奇偶校验
+    hCount = 0;
+    for (uint8_t j = 0; j < 16; j++)
+    {
+        if (spiRawData.rawData & (0x0001 << j))
+            hCount++;
+    }
+    if (hCount & 0x01)
+    {
+        // Parity failed: keep the last valid angle, report invalid checksum.
+        spiRawData.checksumFlag = false;
+        return false;
+    }
+
+    spiRawData.checksumFlag = true;
+    spiRawData.rawAngle = spiRawData.rawData >> 2;
+    spiRawData.noMagFlag = (bool) (spiRawData.rawData & (0x0001 << 1));
+    angleData.rawAngle = spiRawData.rawAngle;
+    angleData.rectifiedAngle = angleData.rectifyValid
+                               ? quickCaliDataPtr[angleData.rawAngle]
+                               : angleData.rawAngle;
+    return true;
 }
 
 void MT6816Base::ReadRawData()
@@ -56,32 +73,9 @@ void MT6816Base::ReadRawData()
         dataRx[0] = SpiTransmitAndRead16Bits(dataTx[0]);
         dataRx[1] = SpiTransmitAndRead16Bits(dataTx[1]);
 
-        spiRawData.rawData = ((dataRx[0] & 0x00FF) << 8) | (dataRx[1] & 0x00FF);
-
-        //奇偶校验
-        hCount = 0;
-        for (uint8_t j = 0; j < 16; j++)
-        {
-            if (spiRawData.rawData & (0x0001 << j))
-                hCount++;
-        }
-        if (hCount & 0x01)
-        {
-            spiRawData.checksumFlag = false;
-        } else
-        {
-            spiRawData.checksumFlag = true;
+        if (ApplyRawData(((dataRx[0] & 0x00FF) << 8) | (dataRx[1] & 0x00FF)))
             break;
-        }
     }
-
-    if (spiRawData.checksumFlag)
-    {
-        spiRawData.rawAngle = spiRawData.rawData >> 2;
-        spiRawData.noMagFlag = (bool) (spiRawData.rawData & (0x0001 << 1));
-    }
-
-    angleData.rawAngle = spiRawData.rawAngle;
 }
 
 

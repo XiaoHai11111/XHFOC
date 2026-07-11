@@ -28,12 +28,15 @@ void LowSideCurrentSenseBase::CalibrateOffsets()
     zeroOffsetB = 0.0f;
     zeroOffsetC = 0.0f;
 
+    // Use the exact same acquisition path as runtime (RefreshAdcSample -> rawAdcVal)
+    // so the phase<->ADC-rank mapping can never diverge from GetPhaseCurrents().
     for (int i = 0; i < calibrationRounds; ++i)
     {
-        zeroOffsetA += GetAdcToVoltage(CH_A);
-        zeroOffsetB += GetAdcToVoltage(CH_B);
-        zeroOffsetC += GetAdcToVoltage(CH_C);
         HAL_Delay(1);
+        RefreshAdcSample();
+        zeroOffsetA += GetAdcToVoltage(rawAdcVal[CH_A]);
+        zeroOffsetB += GetAdcToVoltage(rawAdcVal[CH_B]);
+        zeroOffsetC += GetAdcToVoltage(rawAdcVal[CH_C]);
     }
 
     zeroOffsetA /= (float)calibrationRounds;
@@ -42,25 +45,27 @@ void LowSideCurrentSenseBase::CalibrateOffsets()
 
     if (uart3StreamOutputPtr != nullptr)
     {
-        const auto ToMilliVolt = [](float v) -> long
-        {
-            const float mv = v * 1000.0f;
-            return (mv >= 0.0f) ? (long)(mv + 0.5f) : (long)(mv - 0.5f);
-        };
-
         Respond(*uart3StreamOutputPtr,
-                "[curr] zeroOffsetA=%ldmV zeroOffsetB=%ldmV zeroOffsetC=%ldmV",
-                ToMilliVolt(zeroOffsetA),
-                ToMilliVolt(zeroOffsetB),
-                ToMilliVolt(zeroOffsetC));
+                "[curr] zeroOffsetA=%fV zeroOffsetB=%fV zeroOffsetC=%fV",
+                zeroOffsetA,
+                zeroOffsetB,
+                zeroOffsetC);
     }
 }
 
 PhaseCurrent_t LowSideCurrentSenseBase::GetPhaseCurrents()
 {
+    RefreshAdcSample();
+
     PhaseCurrent_t current{};
-    current.a = (GetAdcToVoltage(CH_A) - zeroOffsetA) / gainA;
-    current.b = (GetAdcToVoltage(CH_B) - zeroOffsetB) / gainB;
-    current.c = (GetAdcToVoltage(CH_C) - zeroOffsetC) / gainC;
+
+    // Two-shunt sensing: the phase-A current-sense channel is unusable on this
+    // board (amplifier output railed near ADC full-scale even at zero current),
+    // so only phases B and C are measured and A is reconstructed from
+    // Kirchhoff's current law (iA + iB + iC = 0).
+    current.b = (GetAdcToVoltage(rawAdcVal[CH_B]) - zeroOffsetB) / gainB;
+    current.c = (GetAdcToVoltage(rawAdcVal[CH_C]) - zeroOffsetC) / gainC;
+    current.a = -(current.b + current.c);
+
     return current;
 }

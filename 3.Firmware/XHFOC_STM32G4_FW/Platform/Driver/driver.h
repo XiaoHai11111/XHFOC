@@ -7,8 +7,9 @@
 class Driver : public DriverFD6288QBase
 {
 public:
-    // Configured in STM32CubeMX
-    static const int PERIOD_COUNT = 3599;
+    // Configured in STM32CubeMX (must match TIM1 ARR / .ioc TIM1.PeriodNoDither).
+    // ARR = 8499 -> ~10 kHz center-aligned PWM / current-loop rate.
+    static const int PERIOD_COUNT = 8499;
 
 
     explicit Driver(float _voltagePowerSupply) :

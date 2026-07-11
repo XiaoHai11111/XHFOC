@@ -11,11 +11,10 @@ public:
         : LowSideCurrentSenseBase(shuntResistor, gain)
     {}
 
-    uint16_t rawAdcVal[3] = {0, 0, 0};
-
 private:
     void InitAdc() override;
-    float GetAdcToVoltage(Channel_t channel) override;
+    void RefreshAdcSample() override;
+    float GetAdcToVoltage(uint16_t raw) override;
 };
 
 #endif

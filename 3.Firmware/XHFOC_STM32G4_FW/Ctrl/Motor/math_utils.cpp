@@ -49,8 +49,14 @@ float CosApprox(float a)
 
 float Normalize(float angle)
 {
-    float a = std::fmod(angle, _2PI);
-    return a >= 0 ? a : (a + _2PI);
+    // Fast range reduction to [0, 2PI) without a libm fmod() call (this is on the
+    // FOC hot path, invoked several times per current-loop tick). Inputs are
+    // bounded (at most a few multiples of 2PI, e.g. electricalAngle*polePairs),
+    // so a single truncation is sufficient and exact enough here.
+    constexpr float kInv2Pi = 0.15915494309189535f; // 1 / (2*PI)
+    float a = angle - _2PI * static_cast<float>(static_cast<int>(angle * kInv2Pi));
+    if (a < 0.0f) a += _2PI;
+    return a;
 }
 
 
