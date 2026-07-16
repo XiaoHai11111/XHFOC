@@ -1,0 +1,4 @@
+interface:
+  display_name: "XHFOC 硬件在环调试"
+  short_description: "XHFOC 固件、串口数据、AI 硬件在环与版本提交流程"
+  default_prompt: "请使用 $xhfoc-hil-debug 维护 XHFOC 固件、串口 HIL 数据与版本提交说明，并按当前源码完成验证。"

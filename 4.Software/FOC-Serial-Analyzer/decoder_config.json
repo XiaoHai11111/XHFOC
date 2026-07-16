@@ -1,0 +1,23 @@
+{
+  "format": "vofa-justfloat",
+  "endianness": "little",
+  "frame_tail_hex": "0000807f",
+  "channels": [
+    "dutyA",
+    "dutyB",
+    "dutyC",
+    "iA",
+    "iB",
+    "iC",
+    "iAlpha",
+    "iBeta",
+    "iq",
+    "id",
+    "position",
+    "velocity",
+    "target",
+    "adcRawIa",
+    "adcRawIb",
+    "adcRawIc"
+  ]
+}

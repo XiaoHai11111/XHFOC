@@ -13,8 +13,8 @@
 #include <cstring>
 
 /* Default Entry -------------------------------------------------------*/
-CmdCtrlMotor* motor = new CmdCtrlMotor( 3, true, 30, 35, 180);
 Motor focMotor = Motor(7);
+CmdCtrlMotor* motor = new CmdCtrlMotor(focMotor, 3, true, 30, 35, 180);
 MT6816 mt6816(&hspi1);
 Driver focDriver(12.0f);
 Led statusLed;
@@ -171,16 +171,19 @@ static void ThreadFocControl(void* argument)
 
     if (focInitOk)
     {
-        focMotor.SetEnable(true);
+        // Alignment may use the power stage, but normal operation must remain
+        // off until an explicit !START command is received after calibration.
+        focMotor.SetEnable(false);
         // Alignment is done (used blocking encoder reads); switch the encoder to
         // the non-blocking pipeline so the high-rate FOC loop never waits on SPI.
         mt6816.EnableAsyncRead(true);
         gFocTickEnabled = true;
-        Respond(*uart3StreamOutputPtr, "[foc] enabled");
+        motor->SetReady(true);
+        Respond(*uart3StreamOutputPtr, "[foc] ready, waiting for !START");
     }
     else
     {
-        focMotor.SetEnable(false);
+        motor->SetReady(false);
         gFocTickEnabled = false;
         Respond(*uart3StreamOutputPtr,
                 "[foc] init failed, tim1_state=%d arr=%lu",

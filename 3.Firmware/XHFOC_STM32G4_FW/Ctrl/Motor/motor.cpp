@@ -66,27 +66,37 @@ void Motor::AttachDriver(DriverBase* _driver)
 
 void Motor::SetEnable(bool _enable)
 {
-    if (enabled == _enable)
+    if (_enable)
     {
+        // Keep the power stage disabled until all software state is ready. This
+        // ordering also makes an enable request safe if the FOC task preempts the
+        // caller between these two operations.
+        if (driver)
+        {
+            driver->SetEnable(true);
+        }
+        enabled = true;
         return;
     }
 
-    enabled = _enable;
-    if (!enabled)
+    // Stop the control loop first, then clear its state and finally disconnect
+    // the power stage. Do this even for repeated STOP requests so that a call
+    // after initialization always forces the hardware into its safe state.
+    enabled = false;
+    setPointCurrent = 0.0f;
+    setPointCurrentTarget = 0.0f;
+    setPointVelocity = 0.0f;
+    setPointAngle = 0.0f;
+    voltage.q = 0.0f;
+    voltage.d = 0.0f;
+    config.pidCurrentQ.Reset();
+    config.pidCurrentD.Reset();
+    config.pidVelocity.Reset();
+    config.pidAngle.Reset();
+    if (driver)
     {
-        setPointCurrent = 0.0f;
-        setPointCurrentTarget = 0.0f;
-        setPointVelocity = 0.0f;
-        setPointAngle = 0.0f;
-        config.pidCurrentQ.Reset();
-        config.pidCurrentD.Reset();
-        config.pidVelocity.Reset();
-        config.pidAngle.Reset();
+        driver->SetEnable(false);
     }
-    // if (driver)
-    // {
-    //     driver->SetEnable(_enable);
-    // }
 }
 
 

@@ -1,0 +1,2 @@
+# Optional on Windows because serial_logger.py has a built-in Win32 backend.
+pyserial>=3.5,<4

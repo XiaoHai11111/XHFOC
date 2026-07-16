@@ -7,6 +7,8 @@
 
 #include "protocol.hpp"
 
+class Motor;
+
 class CmdCtrlMotor {
 
 public:
@@ -20,8 +22,12 @@ public:
 
     const uint32_t CTRL_CIRCLE_COUNT = 200 * 256;
 
-    CmdCtrlMotor(uint8_t _id, bool _inverse = false, uint8_t _reduction = 1,
+    CmdCtrlMotor(Motor& _focMotor, uint8_t _id, bool _inverse = false, uint8_t _reduction = 1,
                   float _angleLimitMin = -180, float _angleLimitMax = 180);
+
+    bool Start();
+    bool Stop();
+    void SetReady(bool _ready);
 
     uint8_t nodeID;
     float angle = 0;
@@ -35,10 +41,15 @@ public:
     auto MakeProtocolDefinitions()
     {
         return make_protocol_member_list(
-            make_protocol_ro_property("angle", &angle)
+            make_protocol_ro_property("angle", &angle),
+            make_protocol_function("start", *this, &CmdCtrlMotor::Start),
+            make_protocol_function("stop", *this, &CmdCtrlMotor::Stop)
         );
     }
 
+private:
+    Motor& focMotor_;
+    volatile bool ready_ = false;
 };
 
 #endif //CMDCTRLMOTOR_H

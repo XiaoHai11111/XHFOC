@@ -1,0 +1,31 @@
+{
+  "experiment": {
+    "name": "",
+    "firmware_revision": "",
+    "notes": ""
+  },
+  "serial": {
+    "port": "COM8",
+    "baudrate": 115200,
+    "bytesize": 8,
+    "parity": "N",
+    "stopbits": 1,
+    "read_timeout_s": 0.2,
+    "xonxoff": false,
+    "rtscts": false,
+    "dsrdtr": false,
+    "auto_reconnect": true,
+    "reconnect_interval_s": 1.0,
+    "connect_timeout_s": 0,
+    "vid": null,
+    "pid": null
+  },
+  "capture": {
+    "duration_s": 0,
+    "output_dir": "captures",
+    "file_prefix": "xhfoc",
+    "read_size": 4096,
+    "flush_interval_s": 1.0,
+    "fsync": true
+  }
+}
