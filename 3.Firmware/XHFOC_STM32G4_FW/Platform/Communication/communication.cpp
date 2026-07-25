@@ -56,8 +56,7 @@ void UsbDeferredInterruptTask(void* ctx)
     }
 }
 
-// Thread to handle deffered processing of USB interrupt, and
-// read commands out of the UART DMA circular buffer
+// One-shot task that constructs the protocol tree and starts transport servers.
 void CommunicationTask(void* ctx)
 {
     (void) ctx; // unused parameter
@@ -70,10 +69,8 @@ void CommunicationTask(void* ctx)
     StartUartServer();
     StartUsbServer();
 
-    for (;;)
-    {
-        osDelay(1000); // nothing to do
-    }
+    commTaskHandle = nullptr;
+    osThreadExit();
 }
 
 extern "C" {

@@ -22,7 +22,7 @@
 - `DMA1_Channel5` -> `TIM2_CH1`（`DMA_NORMAL`，`PERIPH_TO_MEMORY`）
 
 ### 外设技术路线
-- USART3：`UART中断 + 128 B RX DMA(循环) + TX DMA(普通)`，串口参数 `921600 / 8N1`。
+- USART3：`IDLE/半满/满事件 + 128 B RX DMA(循环) + TX DMA(普通)`，串口参数 `921600 / 8N1`。
 - ADC1/ADC2：`ADC中断 + DMA循环`，注入组由 `TIM1_CC4` 下降沿触发。
 - TIM1：中心对齐 PWM（`CH1/CH2/CH3 + 互补输出`），`TIM1_UP_TIM16` 与 `TIM1_TRG_COM_TIM17` 中断使能。
 - TIM2：`CH1` PWM 已配置，`TIM2_CH1` DMA 已预连线。
@@ -57,7 +57,7 @@
 
 - USART3：
   - 异步串口，`921600`，`8N1`，TX/RX 使能；有效 RX DMA 环形缓冲为 `128 B`。
-  - 路线：`UART中断 + RX DMA(循环) + TX DMA(普通)`。
+  - 路线：`IDLE/半满/满事件通知 + RX DMA(循环) + TX DMA(普通)`，UART 任务阻塞等待事件，不再每 `1 ms` 轮询。
 - ADC1/ADC2：
   - 规则组已配置（扫描模式），双 ADC 独立模式。
   - 注入组触发源：`TIM1_CC4` 下降沿。
@@ -86,8 +86,9 @@
 ### 通信架构（USART3 + USB CDC）
 
 - 总体分层：`传输层(USART3/USB)` -> `协议层(ASCII/CMD)` -> `业务层(Motor/参数读写/状态查询)`。
+- 启动任务生命周期：`defaultTask` 完成 USB 与应用初始化后退出；`commTask` 构造协议树并创建 UART/USB 服务任务后退出，不再周期性空唤醒。
 - USART3 技术路线：`中断 + DMA` 组合。
-  - 接收：`RX DMA 循环模式` 持续搬运数据，降低高频中断负载。
+  - 接收：`Receive-to-IDLE + RX DMA 循环模式` 持续搬运数据，IDLE/半满/满回调只通知 UART 任务解析。
   - 发送：`TX DMA 普通模式`，按帧触发发送完成回调。
   - 同步：通过 `FreeRTOS 信号量` 与任务解耦，中断仅做事件投递。
 - USB CDC 技术路线：`端点回调 + 接收队列 + 发送互斥`。

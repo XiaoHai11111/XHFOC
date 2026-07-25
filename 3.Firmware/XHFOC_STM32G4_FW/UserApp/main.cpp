@@ -319,7 +319,7 @@ void Main(void)
     const osThreadAttr_t vofaTask_attributes = {
         .name = "vofaTask",
         .stack_size = 1024,
-        .priority = (osPriority_t)osPriorityNormal,
+        .priority = (osPriority_t)osPriorityBelowNormal,
     };
     vofaTaskHandle = osThreadNew(ThreadVofa, nullptr, &vofaTask_attributes);
     if (vofaTaskHandle == nullptr)

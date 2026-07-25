@@ -159,12 +159,9 @@ void StartDefaultTask(void *argument)
   /* init code for USB_Device */
   MX_USB_Device_Init();
   /* USER CODE BEGIN StartDefaultTask */
-  /* Infinite loop */
   Main();
-  for(;;)
-  {
-    osDelay(1);
-  }
+  defaultTaskHandle = NULL;
+  osThreadExit();
   /* USER CODE END StartDefaultTask */
 }
 
