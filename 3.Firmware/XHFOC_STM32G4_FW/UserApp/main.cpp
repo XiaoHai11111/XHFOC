@@ -15,7 +15,6 @@
 
 /* Default Entry -------------------------------------------------------*/
 constexpr uint32_t kMotorPolePairs = 7U;
-constexpr uint32_t kRuntimeStatsTaskCapacity = 10U;
 Motor focMotor = Motor(static_cast<int>(kMotorPolePairs));
 CmdCtrlMotor* motor = new CmdCtrlMotor(focMotor, 3, true, 30, 35, 180);
 MT6816 mt6816(&hspi1);
@@ -35,182 +34,18 @@ osThreadId_t peripheralTaskHandle;
 osThreadId_t vofaTaskHandle;
 
 static volatile bool gFocTickEnabled = false;
-static volatile bool gFocTimingArmed = false;
-static volatile uint32_t gAdcIrqEntryCycle = 0U;
-static volatile uint32_t gAdcEventCount = 0U;
-static volatile uint32_t gAdcHandledCount = 0U;
-static volatile uint32_t gFirstPendingAdcCycle = 0U;
-static volatile uint32_t gFocTickCount = 0U;
-static volatile uint32_t gFocMissedTickCount = 0U;
-static volatile uint32_t gFocTickMaxCycles = 0U;
-static volatile uint32_t gAdcWakeMaxCycles = 0U;
 VofaDebug vofaDebug;
-
-extern "C" void OnFocAdcIrqEnterFromISR(void)
-{
-    gAdcIrqEntryCycle = DWT->CYCCNT;
-}
 
 extern "C" void OnFocTimerElapsedFromISR(void)
 {
-    if ((focControlTaskHandle == nullptr) || !gFocTimingArmed)
+    if (focControlTaskHandle == nullptr)
     {
         return;
-    }
-
-    const uint32_t eventCount = gAdcEventCount + 1U;
-    gAdcEventCount = eventCount;
-    if ((eventCount - gAdcHandledCount) == 1U)
-    {
-        gFirstPendingAdcCycle = gAdcIrqEntryCycle;
     }
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
     vTaskNotifyGiveFromISR(TaskHandle_t(focControlTaskHandle), &xHigherPriorityTaskWoken);
     portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
-}
-
-struct TaskRuntimeHistory
-{
-    UBaseType_t taskNumber;
-    uint32_t runtimeCounter;
-};
-
-static TaskRuntimeHistory gTaskRuntimeHistory[kRuntimeStatsTaskCapacity] = {};
-
-static char TaskStateToChar(eTaskState state)
-{
-    switch (state)
-    {
-        case eRunning: return 'R';
-        case eReady: return 'Y';
-        case eBlocked: return 'B';
-        case eSuspended: return 'S';
-        case eDeleted: return 'D';
-        default: return '?';
-    }
-}
-
-static uint32_t UpdateTaskRuntimeHistory(const TaskStatus_t& status)
-{
-    TaskRuntimeHistory* emptySlot = nullptr;
-    for (TaskRuntimeHistory& history : gTaskRuntimeHistory)
-    {
-        if (history.taskNumber == status.xTaskNumber)
-        {
-            const uint32_t delta = status.ulRunTimeCounter - history.runtimeCounter;
-            history.runtimeCounter = status.ulRunTimeCounter;
-            return delta;
-        }
-        if ((history.taskNumber == 0U) && (emptySlot == nullptr))
-        {
-            emptySlot = &history;
-        }
-    }
-
-    if (emptySlot != nullptr)
-    {
-        emptySlot->taskNumber = status.xTaskNumber;
-        emptySlot->runtimeCounter = status.ulRunTimeCounter;
-    }
-    return status.ulRunTimeCounter;
-}
-
-static void ReportRuntimeDiagnostics()
-{
-    uint32_t focTickCount;
-    uint32_t missedTickCount;
-    uint32_t tickMaxCycles;
-    uint32_t wakeMaxCycles;
-
-    taskENTER_CRITICAL();
-    focTickCount = gFocTickCount;
-    missedTickCount = gFocMissedTickCount;
-    tickMaxCycles = gFocTickMaxCycles;
-    wakeMaxCycles = gAdcWakeMaxCycles;
-    taskEXIT_CRITICAL();
-
-    const uint64_t tickTimeHundredthsUs =
-            (static_cast<uint64_t>(tickMaxCycles) * 100000000ULL) / SystemCoreClock;
-    const uint64_t wakeTimeHundredthsUs =
-            (static_cast<uint64_t>(wakeMaxCycles) * 100000000ULL) / SystemCoreClock;
-
-    Respond(*uart3StreamOutputPtr,
-            "[rtos] uptime_ms=%lu foc_ticks=%lu missed=%lu tick_max=%lu cyc (%lu.%02lu us) "
-            "wake_max=%lu cyc (%lu.%02lu us)",
-            (unsigned long)HAL_GetTick(),
-            (unsigned long)focTickCount,
-            (unsigned long)missedTickCount,
-            (unsigned long)tickMaxCycles,
-            (unsigned long)(tickTimeHundredthsUs / 100ULL),
-            (unsigned long)(tickTimeHundredthsUs % 100ULL),
-            (unsigned long)wakeMaxCycles,
-            (unsigned long)(wakeTimeHundredthsUs / 100ULL),
-            (unsigned long)(wakeTimeHundredthsUs % 100ULL));
-
-    const UBaseType_t taskCount = uxTaskGetNumberOfTasks();
-    Respond(*uart3StreamOutputPtr,
-            "[rtos] heap=%uB min_heap=%uB active_tasks=%lu capacity=%lu",
-            (unsigned)xPortGetFreeHeapSize(),
-            (unsigned)xPortGetMinimumEverFreeHeapSize(),
-            (unsigned long)taskCount,
-            (unsigned long)kRuntimeStatsTaskCapacity);
-
-    if (taskCount > kRuntimeStatsTaskCapacity)
-    {
-        Respond(*uart3StreamOutputPtr,
-                "[rtos] task_snapshot=overflow count=%lu capacity=%lu",
-                (unsigned long)taskCount,
-                (unsigned long)kRuntimeStatsTaskCapacity);
-        return;
-    }
-
-    auto* taskStatus = static_cast<TaskStatus_t*>(
-            pvPortMalloc(sizeof(TaskStatus_t) * kRuntimeStatsTaskCapacity));
-    if (taskStatus == nullptr)
-    {
-        Respond(*uart3StreamOutputPtr, "[rtos] task_snapshot=no_heap");
-        return;
-    }
-
-    const UBaseType_t capturedCount =
-            uxTaskGetSystemState(taskStatus, kRuntimeStatsTaskCapacity, nullptr);
-    if (capturedCount == 0U)
-    {
-        vPortFree(taskStatus);
-        Respond(*uart3StreamOutputPtr, "[rtos] task_snapshot=failed");
-        return;
-    }
-
-    uint64_t totalRuntimeDelta = 0ULL;
-    for (UBaseType_t i = 0U; i < capturedCount; ++i)
-    {
-        taskStatus[i].ulRunTimeCounter = UpdateTaskRuntimeHistory(taskStatus[i]);
-        totalRuntimeDelta += taskStatus[i].ulRunTimeCounter;
-    }
-
-    for (UBaseType_t i = 0U; i < capturedCount; ++i)
-    {
-        const uint32_t cpuPermille = (totalRuntimeDelta == 0ULL)
-                ? 0U
-                : static_cast<uint32_t>(
-                        (static_cast<uint64_t>(taskStatus[i].ulRunTimeCounter) * 1000ULL) /
-                        totalRuntimeDelta);
-        const uint32_t stackMinFreeBytes =
-                static_cast<uint32_t>(taskStatus[i].usStackHighWaterMark) *
-                sizeof(StackType_t);
-
-        Respond(*uart3StreamOutputPtr,
-                "[rtos.task] name=%s cpu=%lu.%lu%% stack_min_free=%luB prio=%lu state=%c",
-                taskStatus[i].pcTaskName,
-                (unsigned long)(cpuPermille / 10U),
-                (unsigned long)(cpuPermille % 10U),
-                (unsigned long)stackMinFreeBytes,
-                (unsigned long)taskStatus[i].uxCurrentPriority,
-                TaskStateToChar(taskStatus[i].eCurrentState));
-    }
-
-    vPortFree(taskStatus);
 }
 
 
@@ -274,11 +109,9 @@ static void ThreadPeripheral(void* argument)
     constexpr uint32_t kTickMs = 10U;       // key scan period
     constexpr uint32_t kLedTickMs = 50U;
     constexpr uint32_t kStateHoldMs = 5000U;
-    constexpr uint32_t kDiagnosticsPeriodMs = 10000U;
     uint32_t elapsedForKeys = 0;
     uint32_t elapsedInState = 0;
     uint32_t elapsedForLed = 0;
-    uint32_t elapsedForDiagnostics = 0;
     Motor::RunState_t currentState = Motor::STATE_STOP;
 
     key1.SetOnEventListener(OnKeyEvent);
@@ -315,13 +148,6 @@ static void ThreadPeripheral(void* argument)
         {
             elapsedInState = 0;
             currentState = NextSimState(currentState);
-        }
-
-        elapsedForDiagnostics += kLoopMs;
-        if (elapsedForDiagnostics >= kDiagnosticsPeriodMs)
-        {
-            elapsedForDiagnostics = 0U;
-            ReportRuntimeDiagnostics();
         }
 
         osDelay(kLoopMs);
@@ -409,58 +235,11 @@ static void ThreadFocControl(void* argument)
                 (unsigned long)__HAL_TIM_GET_AUTORELOAD(&htim1));
     }
 
-    taskENTER_CRITICAL();
-    gAdcEventCount = 0U;
-    gAdcHandledCount = 0U;
-    gFirstPendingAdcCycle = 0U;
-    gFocTickCount = 0U;
-    gFocMissedTickCount = 0U;
-    gFocTickMaxCycles = 0U;
-    gAdcWakeMaxCycles = 0U;
-    (void)ulTaskNotifyTake(pdTRUE, 0U);
-    gFocTimingArmed = focInitOk;
-    taskEXIT_CRITICAL();
-
     for (;;)
     {
         // Control loop is triggered by ADC injected conversion complete interrupt.
-        (void)ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        const uint32_t taskWakeCycle = DWT->CYCCNT;
-
-        taskENTER_CRITICAL();
-        const uint32_t adcEventCount = gAdcEventCount;
-        const uint32_t pendingTickCount = adcEventCount - gAdcHandledCount;
-        const uint32_t firstPendingAdcCycle = gFirstPendingAdcCycle;
-        gAdcHandledCount = adcEventCount;
-        (void)ulTaskNotifyTake(pdTRUE, 0U);
-        taskEXIT_CRITICAL();
-
-        if (pendingTickCount == 0U)
-        {
-            continue;
-        }
-
-        const uint32_t wakeCycles = taskWakeCycle - firstPendingAdcCycle;
-        if (wakeCycles > gAdcWakeMaxCycles)
-        {
-            gAdcWakeMaxCycles = wakeCycles;
-        }
-        if (pendingTickCount > 1U)
-        {
-            gFocMissedTickCount += pendingTickCount - 1U;
-        }
-
-        if (gFocTickEnabled)
-        {
-            const uint32_t tickStartCycle = DWT->CYCCNT;
-            focMotor.Tick();
-            const uint32_t tickCycles = DWT->CYCCNT - tickStartCycle;
-            if (tickCycles > gFocTickMaxCycles)
-            {
-                gFocTickMaxCycles = tickCycles;
-            }
-            gFocTickCount++;
-        }
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+        if (gFocTickEnabled) focMotor.Tick();
     }
 }
 
