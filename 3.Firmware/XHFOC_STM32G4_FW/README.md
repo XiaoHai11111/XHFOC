@@ -99,6 +99,23 @@
   - Native/Fibre 对象树通过 JSON 描述符发布 `motor` 方法；电流、速度和位置分别使用
     `set_current`、`set_velocity` 和 `set_position`。
 
+### FOC 与 RTOS 实时诊断
+
+- FreeRTOS 调度器启动时使能 Cortex-M4 DWT `CYCCNT`：
+  - 从 `ADC1_2_IRQHandler` 入口到 `focControlTask` 从通知等待中恢复的最大延迟记录为
+    `wake_max`，包含 HAL ADC 中断处理、采样快照以及 ISR 到任务切换时间。
+  - `focMotor.Tick()` 的最大执行周期数记录为 `tick_max`；两项同时按当前
+    `SystemCoreClock` 换算为微秒。
+- ADC 通知使用计数型任务通知。若一次任务唤醒时累计了多个 ADC 事件，本轮只执行一次
+  `focMotor.Tick()`，其余事件累计到 `missed`，用来直接识别控制任务未跟上 10 kHz 触发的问题。
+- 每 `10 s` 由现有 `peripheralTask` 输出一次诊断，不新增周期任务：
+  - `[rtos]`：累计 FOC tick、missed-tick、最大执行时间、最大唤醒延迟和 FreeRTOS 堆余量。
+  - `[rtos.task]`：上一统计窗口内各活动任务的 CPU 占比、优先级、状态和
+    `stack_min_free`（任务创建以来的最小剩余栈，单位 B）。
+- 任务运行时间统计使用 DWT 驱动的 FreeRTOS run-time stats；软件计数器按 `256` 个 CPU
+  周期为一单位，降低上下文切换测量开销。任务快照最多容纳 `10` 个活动任务，快照缓冲在
+  报告期间从 FreeRTOS 堆临时申请并立即释放；超出容量或堆不足会输出明确的 `[rtos]` 错误。
+
 ### USB Native/Fibre JSON 对象接口
 
 三个接口在 `CmdCtrlMotor::MakeProtocolDefinitions()` 中与 `start`、`stop` 一起发布。连接

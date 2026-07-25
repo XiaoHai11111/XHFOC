@@ -192,6 +192,8 @@ foc0.motor.set_position(12.5663706)
 
 向 `MakeProtocolDefinitions()` 增加 Fibre 函数后，检查 `build/Release/**/*.su` 中 `MakeObjTree()` 的静态栈占用；对象树在 `commTask` 中构造，当前测得 816 B，因此该任务栈为 1536 B。构造对象树并启动 UART/USB 服务任务后，`commTask` 调用 `osThreadExit()` 释放自身；`defaultTask` 在 USB 和应用初始化完成后同样退出，不再周期性空唤醒。不要只看链接器 RAM 百分比：若对象树构造踩栈，可能出现通信仍有响应但 FOC 未进入 ready 的假象。
 
+固件使用 Cortex-M4 DWT `CYCCNT` 记录 `focMotor.Tick()` 最大执行周期，以及从 `ADC1_2_IRQHandler` 入口到 `focControlTask` 恢复运行的最大延迟。ADC 通知为计数型；一次唤醒合并多个事件时，只执行一次控制 tick，其余计入累计 `missed`。每 10 秒会混合输出 `[rtos]` 与 `[rtos.task]` ASCII 诊断行：前者包含 FOC tick、missed、`tick_max`、`wake_max` 和堆余量，后者包含上一窗口 CPU 占比、任务状态和任务创建以来的 `stack_min_free` 字节数。分析实时性时同时检查 `tick_max < 100 us`、`wake_max`、`missed == 0` 和各任务栈余量；周期统计本身会产生少量调度与串口开销，应保留在验收条件中。
+
 复位后没有机械校准动作不一定是故障：只有启动日志出现 `record=valid align=flash` 时才表示正常复用了 Flash 对齐记录。若 `!START` 返回 `motor not ready`，在复位前先打开 USART3 日志并检查：
 
 - `[err] create task focControlTask failed`：任务或 FreeRTOS 堆不足。
@@ -388,7 +390,7 @@ python serial_logger.py --duration 33 --send '5:!START' --send '30:!STOP' --fina
 
 分析前检查以下源码：
 
-- `3.Firmware/XHFOC_STM32G4_FW/Core/Src/usart.c` 定义 USART3 参数。当前为 `921600/8N1`、无硬件流控、PB10 TX、PB11 RX；`Platform/Communication/interface_uart.cpp` 使用单个 `128 B` RX DMA 环形缓冲，通过 Receive-to-IDLE 的 IDLE/半满/满回调通知 UART 任务解析，不再每 `1 ms` 轮询。
+- `3.Firmware/XHFOC_STM32G4_FW/Core/Src/usart.c` 定义 USART3 参数。当前为 `921600/8N1`、无硬件流控、PB10 TX、PB11 RX；`Platform/Communication/interface_uart.cpp` 使用单个 `128 B` RX DMA 环形缓冲，通过 Receive-to-IDLE 的 IDLE/半满/满回调通知 UART 任务解析，不再每 `1 ms` 轮询。每 10 秒插入的 `[rtos]` 与 `[rtos.task]` 属于合法 ASCII 诊断流，不改变 VOFA 帧格式或通道顺序。
 - `3.Firmware/XHFOC_STM32G4_FW/UserApp/main.cpp` 定义 VOFA 任务和通道顺序。
 - `3.Firmware/XHFOC_STM32G4_FW/Platform/Vofa/vofa_debug.cpp` 定义 JustFloat 序列化和帧尾。
 - `3.Firmware/XHFOC_STM32G4_FW/Platform/Communication/` 实现 UART 传输和 ASCII 命令处理。

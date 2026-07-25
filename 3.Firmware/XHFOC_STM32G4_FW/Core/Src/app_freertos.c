@@ -57,6 +57,10 @@ osSemaphoreId sem_usb_tx_cdc;
 osSemaphoreId sem_usb_tx_native;
 osMutexId log_mutex;
 
+static uint32_t runtimeStatsLastCycle;
+static uint32_t runtimeStatsScaledCounter;
+static uint32_t runtimeStatsCycleRemainder;
+
 /* USER CODE END Variables */
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
@@ -167,5 +171,34 @@ void StartDefaultTask(void *argument)
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
+
+void RuntimeStatsTimerInit(void)
+{
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0U;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+  runtimeStatsLastCycle = 0U;
+  runtimeStatsScaledCounter = 0U;
+  runtimeStatsCycleRemainder = 0U;
+}
+
+uint32_t RuntimeStatsTimerGetValue(void)
+{
+  /*
+   * Scale the 170 MHz DWT counter by 256 without division. Keeping the
+   * remainder avoids losing short task slices, while the software accumulator
+   * remains monotonic across raw CYCCNT wrap-around.
+  */
+  const uint32_t now = DWT->CYCCNT;
+  const uint32_t elapsedCycles = now - runtimeStatsLastCycle;
+  const uint32_t remainder =
+      runtimeStatsCycleRemainder + (elapsedCycles & 0xFFU);
+
+  runtimeStatsLastCycle = now;
+  runtimeStatsScaledCounter += (elapsedCycles >> 8U) + (remainder >> 8U);
+  runtimeStatsCycleRemainder = remainder & 0xFFU;
+  return runtimeStatsScaledCounter;
+}
 
 /* USER CODE END Application */

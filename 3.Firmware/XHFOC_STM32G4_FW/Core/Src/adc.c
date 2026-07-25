@@ -618,7 +618,7 @@ bool AdcGetInjectedPhaseCurrentsRaw(uint16_t* ia, uint16_t* ib, uint16_t* ic)
 
 void HAL_ADCEx_InjectedConvCpltCallback(ADC_HandleTypeDef* hadc)
 {
-  //20kHz回调频率
+  // One callback per TIM1 PWM period (10 kHz).
   if ((hadc == NULL) || (hadc->Instance != ADC1))
   {
     return;
