@@ -27,7 +27,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "serial": {
         "port": "COM8",
-        "baudrate": 115200,
+        "baudrate": 921600,
         "bytesize": 8,
         "parity": "N",
         "stopbits": 1,

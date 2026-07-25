@@ -63,7 +63,7 @@ class SerialLoggerTests(unittest.TestCase):
     def test_project_config_is_valid_and_relative_output_is_resolved(self) -> None:
         config = serial_logger.load_config(PROJECT_DIR / "config.json")
         self.assertEqual(config["serial"]["port"], "COM8")
-        self.assertEqual(config["serial"]["baudrate"], 115200)
+        self.assertEqual(config["serial"]["baudrate"], 921600)
         self.assertTrue(Path(config["capture"]["output_dir"]).is_absolute())
 
     def test_negative_duration_is_rejected(self) -> None:

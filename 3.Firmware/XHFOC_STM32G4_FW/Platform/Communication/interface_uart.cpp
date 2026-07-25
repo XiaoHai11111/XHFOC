@@ -5,12 +5,12 @@
 #include "usart.h"
 
 #define UART_TX_BUFFER_SIZE 64
-#define UART_RX_BUFFER_SIZE 64
+#define UART_RX_BUFFER_SIZE 128
 
-// DMA open loop continous circular buffer
-// 1ms delay periodic, chase DMA ptr around
-static uint8_t dma_rx_buffer[2][UART_RX_BUFFER_SIZE];
-static uint32_t dma_last_rcv_idx[2];
+// DMA open-loop continuous circular buffer.
+// The 1 ms polling task chases the DMA write pointer around this ring.
+static uint8_t dma_rx_buffer[UART_RX_BUFFER_SIZE];
+static uint32_t dma_last_rcv_idx;
 
 // FIXME: the stdlib doesn't know about CMSIS threads, so this is just a global variable
 // static thread_local uint32_t deadline_ms = 0;
@@ -71,30 +71,31 @@ static void UartServerTask(void* ctx)
         if (huart3.ErrorCode != HAL_UART_ERROR_NONE)
         {
             HAL_UART_AbortReceive(&huart3);
-            HAL_UART_Receive_DMA(&huart3, dma_rx_buffer[0], sizeof(dma_rx_buffer[0]));
+            HAL_UART_Receive_DMA(&huart3, dma_rx_buffer, sizeof(dma_rx_buffer));
+            dma_last_rcv_idx = UART_RX_BUFFER_SIZE - huart3.hdmarx->Instance->CNDTR;
         }
         // Fetch the circular buffer "write pointer", where it would write next
         uint32_t new_rcv_idx = UART_RX_BUFFER_SIZE - huart3.hdmarx->Instance->CNDTR;
 
         // deadline_ms = timeout_to_deadline(PROTOCOL_SERVER_TIMEOUT_MS);
         // Process bytes in one or two chunks (two in case there was a wrap)
-        if (new_rcv_idx < dma_last_rcv_idx[0])
+        if (new_rcv_idx < dma_last_rcv_idx)
         {
-            uart3_stream_input.process_bytes(dma_rx_buffer[0] + dma_last_rcv_idx[0],
-                                             UART_RX_BUFFER_SIZE - dma_last_rcv_idx[0],
+            uart3_stream_input.process_bytes(dma_rx_buffer + dma_last_rcv_idx,
+                                             UART_RX_BUFFER_SIZE - dma_last_rcv_idx,
                                              nullptr); // TODO: use process_all
-            ASCII_protocol_parse_stream(dma_rx_buffer[0] + dma_last_rcv_idx[0],
-                                        UART_RX_BUFFER_SIZE - dma_last_rcv_idx[0], uart3_stream_output);
-            dma_last_rcv_idx[0] = 0;
+            ASCII_protocol_parse_stream(dma_rx_buffer + dma_last_rcv_idx,
+                                        UART_RX_BUFFER_SIZE - dma_last_rcv_idx, uart3_stream_output);
+            dma_last_rcv_idx = 0;
         }
-        if (new_rcv_idx > dma_last_rcv_idx[0])
+        if (new_rcv_idx > dma_last_rcv_idx)
         {
-            uart3_stream_input.process_bytes(dma_rx_buffer[0] + dma_last_rcv_idx[0],
-                                             new_rcv_idx - dma_last_rcv_idx[0],
+            uart3_stream_input.process_bytes(dma_rx_buffer + dma_last_rcv_idx,
+                                             new_rcv_idx - dma_last_rcv_idx,
                                              nullptr); // TODO: use process_all
-            ASCII_protocol_parse_stream(dma_rx_buffer[0] + dma_last_rcv_idx[0],
-                                        new_rcv_idx - dma_last_rcv_idx[0], uart3_stream_output);
-            dma_last_rcv_idx[0] = new_rcv_idx;
+            ASCII_protocol_parse_stream(dma_rx_buffer + dma_last_rcv_idx,
+                                        new_rcv_idx - dma_last_rcv_idx, uart3_stream_output);
+            dma_last_rcv_idx = new_rcv_idx;
         }
 
         osDelay(1);
@@ -112,8 +113,8 @@ void StartUartServer()
     // DMA is set up to receive in a circular buffer forever.
     // We don't use interrupts to fetch the data, instead we periodically read
     // data out of the circular buffer into a parse buffer, controlled by a state machine
-    HAL_UART_Receive_DMA(&huart3, dma_rx_buffer[0], sizeof(dma_rx_buffer[0]));
-    dma_last_rcv_idx[0] = UART_RX_BUFFER_SIZE - huart3.hdmarx->Instance->CNDTR;
+    HAL_UART_Receive_DMA(&huart3, dma_rx_buffer, sizeof(dma_rx_buffer));
+    dma_last_rcv_idx = UART_RX_BUFFER_SIZE - huart3.hdmarx->Instance->CNDTR;
 
     // Start UART communication thread
     uartServerTaskHandle = osThreadNew(UartServerTask, nullptr, &uartServerTask_attributes);

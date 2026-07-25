@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import struct
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -9,10 +11,51 @@ from pathlib import Path
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_DIR))
 
-from decode_capture import ChunkTime, DecoderConfig, decode_raw, extract_ascii  # noqa: E402
+from decode_capture import (  # noqa: E402
+    DEFAULT_DECODER_CONFIG,
+    ChunkTime,
+    DecoderConfig,
+    DecodeResult,
+    decode_raw,
+    extract_ascii,
+    load_decoder_config,
+    write_outputs,
+)
 
 
 class DecodeCaptureTests(unittest.TestCase):
+    def test_project_decoder_config_tracks_firmware_baudrate(self) -> None:
+        config = load_decoder_config(DEFAULT_DECODER_CONFIG)
+        self.assertEqual(config.expected_baudrate, 921600)
+
+    def test_summary_reports_capture_baudrate_mismatch(self) -> None:
+        config = load_decoder_config(DEFAULT_DECODER_CONFIG)
+        result = DecodeResult((), (), 0, 0, 0)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            session_dir = Path(temp_dir)
+            raw_path = session_dir / "serial_raw.bin"
+            raw_path.write_bytes(b"")
+            write_outputs(
+                session_dir,
+                raw_path,
+                session_dir / "decoded",
+                config,
+                result,
+                {
+                    "status": "complete",
+                    "bytes_written": 0,
+                    "serial": {"baudrate": 115200},
+                },
+            )
+            summary = json.loads(
+                (session_dir / "decoded" / "parse_summary.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            self.assertEqual(summary["source"]["expected_baudrate"], 921600)
+            self.assertEqual(summary["source"]["captured_baudrate"], 115200)
+            self.assertFalse(summary["source"]["baudrate_matches_config"])
+
     def test_mixed_ascii_and_vofa_frames_are_separated(self) -> None:
         config = DecoderConfig(("a", "b"), bytes.fromhex("0000807f"), "<2f")
         frame1 = struct.pack("<2f", 1.25, -2.5) + config.tail

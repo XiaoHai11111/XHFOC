@@ -205,7 +205,8 @@ foc0.motor.set_position(12.5663706)
 
 - 填写 `experiment.name`、`firmware_revision` 和 `notes`，让后续 AI 分析能够识别实验条件。
 - 当前设备使用 `serial.port = "COM8"`。仅在确实需要枚举端口时改为 `auto`；必要时用十进制 `vid` 和 `pid` 限制自动选择范围。
-- 当前固件默认使用 `115200/8N1`、无流控。固件改变前保持这些参数一致。
+- 当前固件默认使用 `921600/8N1`、无流控；USART3 有效 RX DMA 环形缓冲为 `128 B`。固件改变前保持这些参数一致。
+- `decoder_config.json` 的 `expected_baudrate` 同步记录当前固件波特率。旧的 `115200` 原始会话仍按相同 VOFA 帧格式解析；解析摘要会保留采集元数据中的实际波特率并标记是否与当前配置一致。
 - 将 `capture.duration_s` 设为任意正数以定时采集；设为 `0` 表示持续采集，直到用户停止程序。
 - 默认使用相对于配置文件的 `capture.output_dir`，除非明确需要绝对路径。
 - 使用 `serial.connect_timeout_s = 0` 表示初次连接时无限重试；设为正数表示超时秒数。
@@ -387,7 +388,7 @@ python serial_logger.py --duration 33 --send '5:!START' --send '30:!STOP' --fina
 
 分析前检查以下源码：
 
-- `3.Firmware/XHFOC_STM32G4_FW/Core/Src/usart.c` 定义 USART3 参数。当前为 `115200/8N1`、无硬件流控、PB10 TX、PB11 RX。
+- `3.Firmware/XHFOC_STM32G4_FW/Core/Src/usart.c` 定义 USART3 参数。当前为 `921600/8N1`、无硬件流控、PB10 TX、PB11 RX；`Platform/Communication/interface_uart.cpp` 使用单个 `128 B` RX DMA 环形缓冲。
 - `3.Firmware/XHFOC_STM32G4_FW/UserApp/main.cpp` 定义 VOFA 任务和通道顺序。
 - `3.Firmware/XHFOC_STM32G4_FW/Platform/Vofa/vofa_debug.cpp` 定义 JustFloat 序列化和帧尾。
 - `3.Firmware/XHFOC_STM32G4_FW/Platform/Communication/` 实现 UART 传输和 ASCII 命令处理。

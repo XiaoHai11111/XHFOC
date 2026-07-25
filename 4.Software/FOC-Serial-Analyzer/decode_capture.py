@@ -38,6 +38,7 @@ class DecoderConfig:
     channels: tuple[str, ...]
     tail: bytes
     struct_format: str
+    expected_baudrate: Optional[int] = None
 
     @property
     def payload_size(self) -> int:
@@ -101,8 +102,20 @@ def load_decoder_config(path: Path) -> DecoderConfig:
     byte_order = payload.get("endianness")
     if byte_order not in ("little", "big"):
         raise DecodeError("endianness 只能是 little 或 big")
+    expected_baudrate = payload.get("expected_baudrate")
+    if expected_baudrate is not None and (
+        isinstance(expected_baudrate, bool)
+        or not isinstance(expected_baudrate, int)
+        or expected_baudrate <= 0
+    ):
+        raise DecodeError("expected_baudrate 必须是正整数")
     prefix = "<" if byte_order == "little" else ">"
-    return DecoderConfig(tuple(channels), tail, prefix + f"{len(channels)}f")
+    return DecoderConfig(
+        tuple(channels),
+        tail,
+        prefix + f"{len(channels)}f",
+        expected_baudrate,
+    )
 
 
 def load_chunks(path: Path) -> list[ChunkTime]:
@@ -306,6 +319,12 @@ def write_outputs(
 
     non_frame_bytes = sum(len(data) for _, data in result.gaps)
     metadata_bytes = metadata.get("bytes_written")
+    metadata_serial = metadata.get("serial")
+    captured_baudrate = (
+        metadata_serial.get("baudrate")
+        if isinstance(metadata_serial, dict)
+        else None
+    )
     raw_size = raw_path.stat().st_size
     summary: dict[str, Any] = {
         "schema_version": 1,
@@ -318,6 +337,14 @@ def write_outputs(
             "capture_stop_reason": metadata.get("stop_reason"),
             "metadata_bytes_written": metadata_bytes,
             "raw_size_matches_metadata": metadata_bytes == raw_size if isinstance(metadata_bytes, int) else None,
+            "expected_baudrate": config.expected_baudrate,
+            "captured_baudrate": captured_baudrate,
+            "baudrate_matches_config": (
+                captured_baudrate == config.expected_baudrate
+                if isinstance(captured_baudrate, int)
+                and isinstance(config.expected_baudrate, int)
+                else None
+            ),
         },
         "format": {
             "name": "vofa-justfloat",

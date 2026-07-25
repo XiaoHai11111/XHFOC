@@ -1,5 +1,6 @@
 {
   "format": "vofa-justfloat",
+  "expected_baudrate": 921600,
   "endianness": "little",
   "frame_tail_hex": "0000807f",
   "channels": [

@@ -22,7 +22,7 @@
 - `DMA1_Channel5` -> `TIM2_CH1`（`DMA_NORMAL`，`PERIPH_TO_MEMORY`）
 
 ### 外设技术路线
-- USART3：`UART中断 + RX DMA(循环) + TX DMA(普通)`，串口参数 `115200 / 8N1`。
+- USART3：`UART中断 + 128 B RX DMA(循环) + TX DMA(普通)`，串口参数 `921600 / 8N1`。
 - ADC1/ADC2：`ADC中断 + DMA循环`，注入组由 `TIM1_CC4` 下降沿触发。
 - TIM1：中心对齐 PWM（`CH1/CH2/CH3 + 互补输出`），`TIM1_UP_TIM16` 与 `TIM1_TRG_COM_TIM17` 中断使能。
 - TIM2：`CH1` PWM 已配置，`TIM2_CH1` DMA 已预连线。
@@ -56,7 +56,7 @@
 ### 外设技术路线
 
 - USART3：
-  - 异步串口，`115200`，`8N1`，TX/RX 使能。
+  - 异步串口，`921600`，`8N1`，TX/RX 使能；有效 RX DMA 环形缓冲为 `128 B`。
   - 路线：`UART中断 + RX DMA(循环) + TX DMA(普通)`。
 - ADC1/ADC2：
   - 规则组已配置（扫描模式），双 ADC 独立模式。
