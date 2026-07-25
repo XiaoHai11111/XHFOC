@@ -32,7 +32,7 @@ protected:
     float errorLast = 0;
     float outputLast = 0;
     float integralLast = 0;
-    unsigned long timeStamp = 0;
+    uint64_t timeStamp = 0;
 };
 
 #endif

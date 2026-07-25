@@ -23,7 +23,7 @@ public:
 
 
 protected:
-    unsigned long timeStamp;
+    uint64_t timeStamp;
     float outputLast;
 };
 

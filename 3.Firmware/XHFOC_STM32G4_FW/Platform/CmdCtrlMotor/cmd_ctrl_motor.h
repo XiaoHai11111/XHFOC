@@ -5,9 +5,8 @@
 #ifndef CMDCTRLMOTOR_H
 #define CMDCTRLMOTOR_H
 
+#include "motor.h"
 #include "protocol.hpp"
-
-class Motor;
 
 class CmdCtrlMotor {
 
@@ -27,6 +26,9 @@ public:
 
     bool Start();
     bool Stop();
+    bool SetCurrent(float targetCurrent);
+    bool SetVelocity(float targetVelocity);
+    bool SetPosition(float targetPosition);
     void SetReady(bool _ready);
 
     uint8_t nodeID;
@@ -43,13 +45,19 @@ public:
         return make_protocol_member_list(
             make_protocol_ro_property("angle", &angle),
             make_protocol_function("start", *this, &CmdCtrlMotor::Start),
-            make_protocol_function("stop", *this, &CmdCtrlMotor::Stop)
+            make_protocol_function("stop", *this, &CmdCtrlMotor::Stop),
+            make_protocol_function("set_current", *this, &CmdCtrlMotor::SetCurrent, "target"),
+            make_protocol_function("set_velocity", *this, &CmdCtrlMotor::SetVelocity, "target"),
+            make_protocol_function("set_position", *this, &CmdCtrlMotor::SetPosition, "target")
         );
     }
 
 private:
+    bool SetControlTarget(Motor::ControlMode_t controlMode, float target);
+
     Motor& focMotor_;
     volatile bool ready_ = false;
+    bool positionTargetExplicit_ = false;
 };
 
 #endif //CMDCTRLMOTOR_H

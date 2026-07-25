@@ -18,16 +18,20 @@ public:
         config.voltageLimit = 12.0f;
         config.currentLimit = 10.0f;
         config.velocityLimit = 500.0f;
+        config.positionAccelerationLimit = 30.0f; //加速/减速斜坡
+        config.positionCurrentLimit = 2.5f;      //位置模式最大电流
+        config.positionFrictionCurrent = 0.22f;
+        config.positionDeadband = 0.005f;
 
         config.lpfCurrentQ = LowPassFilter{0.0005f};
         config.lpfCurrentD = LowPassFilter{0.0005f};
-        config.lpfVelocity = LowPassFilter{0.06f};
+        config.lpfVelocity = LowPassFilter{0.04f};
         config.lpfAngle = LowPassFilter{0.003f};
 
         config.pidCurrentQ = PidController{0.015f, 35.0f, 0.0f, 0.0f, 12.0f};
         config.pidCurrentD = PidController{0.01f, 20.0f, 0.0f, 0.0f, 12.0f};
-        config.pidVelocity = PidController{0.30f, 0.02f, 0.0f, 80.0f, 12.0f};
-        config.pidAngle = PidController{10.0f, 0, 0, 0, 5.0f};
+        config.pidVelocity = PidController{0.22f, 0.0f, 0.0f, 80.0f, 12.0f};
+        config.pidAngle = PidController{3.0f, 0, 0, 0, 10.0f};
     }
 
     enum ControlMode_t
@@ -51,6 +55,10 @@ public:
         float voltageLimit{};
         float currentLimit{};
         float velocityLimit{};
+        float positionAccelerationLimit{};
+        float positionCurrentLimit{};
+        float positionFrictionCurrent{};
+        float positionDeadband{};
         float voltageUsedForSensorAlign{};
         ControlMode_t controlMode = ANGLE;
         LowPassFilter lpfCurrentQ{};

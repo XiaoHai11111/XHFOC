@@ -1,6 +1,6 @@
 ---
 name: xhfoc-hil-debug
-description: 维护并使用 XHFOC 项目的 CLion/STM32 开发环境、固件、串口采集、VOFA 数据解析、AI 辅助硬件在环调试和版本提交流程。当 Codex 需要浏览本项目目录、检查或复现 CLion、CMake、STM32CubeCLT、编译、烧录与调试配置，维护 XHFOC_STM32G4_FW，运行 FOC-Serial-Analyzer，解析 UART 或 VOFA 数据，编写版本提交信息，或在用户明确授权后提交并推送项目改动时使用本技能。
+description: 维护并使用 XHFOC 项目的 CLion/STM32 开发环境、固件、USB Native/Fibre JSON 对象控制、串口采集、VOFA 数据解析、AI 辅助硬件在环调试和版本提交流程。当 Codex 需要浏览本项目目录、检查或复现 CLion、CMake、STM32CubeCLT、编译、烧录与调试配置，维护 XHFOC_STM32G4_FW，通过 USB 设置电流/速度/多圈位置目标，运行 FOC-Serial-Analyzer，解析 UART 或 VOFA 数据，编写版本提交信息，或在用户明确授权后提交并推送项目改动时使用本技能。
 ---
 
 # XHFOC 硬件在环调试
@@ -28,12 +28,13 @@ E:\Projects\XHFOC\5.Docs\xhfoc-hil-debug\SKILL.md
 2. 保留用户现有及无关改动；未经要求不要提交、重置或删除文件。
 3. 分析串口数据时先确认 metadata.json 的 status 为 complete；必要时运行 decode_capture.py，再结合 parse_summary.json、vofa.csv、ascii.log 和原始字节给出证据。
 4. 修改代码时完成与风险相称的测试；区分已验证结论、合理推断和仍需硬件确认的事项。
-5. 如果目录、串口参数、VOFA 帧格式、通道顺序或操作流程发生变化，同步更新本 SKILL 和相关配置。
+5. 如果目录、串口参数、USB Native/Fibre JSON 对象接口、VOFA 帧格式、通道顺序或操作流程发生变化，同步更新本 SKILL 和相关配置。
 6. 生成提交信息前检查近期提交格式、git status、实际 diff 和验证结果，使用本技能中的版本提交模板，不把未执行的测试写成已通过。
 7. 只有在我明确要求提交或推送时才执行相应 Git 操作；推送前检查暂存内容、当前分支和远端，禁止 force push。
 8. 处理构建或调试问题时先检查 CMakePresets.json、工具链文件、.ioc 和实际工具版本；不要把被忽略的 .idea、CMakeCache.txt 或本机绝对路径当作跨机器唯一事实。
 9. 只有在我明确要求烧录或复位硬件时才操作 ST-LINK；执行前说明将使用的构建类型、ELF 路径和当前未提交控制参数，执行后报告芯片识别、下载校验和复位结果。
 10. 进行闭环调参时，每次复位后先等待校准完成，再发送 `!START`；采集结束先发送 `!STOP`，随后用 ST-LINK 复位。每轮只改变有明确假设的一组参数，并用长时复测排除粘滑和积分累积造成的假收敛。
+11. 需要切换控制模式或目标时优先使用 USB Native/Fibre 对象：电流、速度和位置分别调用 `motor.set_current()`、`motor.set_velocity()`、`motor.set_position()`；位置目标使用绝对多圈机械角（rad），禁止擅自归一化为 `[-π, π]`。
 
 最终请用中文说明：结论、证据、修改文件、验证结果、遗留风险和建议的下一步。
 ```
@@ -163,6 +164,41 @@ $elf = 'E:\Projects\XHFOC\3.Firmware\XHFOC_STM32G4_FW\cmake-build-release-stm32\
 
 不要把 ST-LINK 序列号写入 Skill、提交信息或公开报告。只需要复位时，保持同样的连接参数并执行 `-rst -run`，不要重复下载。Normal 模式连接失败时，先退出 CLion 调试会话并排查探针占用、供电与 SWD 接线；只有固件导致普通连接失败且 NRST 已接入时，才改用 `mode=UR reset=HWrst` 连接后烧录。不要为了恢复连接而默认全片擦除或修改 Option Bytes。
 
+## 通过 USB Native/Fibre JSON 对象控制电机
+
+接口由 `CmdCtrlMotor::MakeProtocolDefinitions()` 发布到 Fibre 对象树，设备的 JSON 描述符用于让上位机发现方法和参数，实际调用走 USB Native/ODrive 端点，不是向 CDC 虚拟串口发送 JSON 文本。USART3（当前 COM8）继续用于日志、ASCII 启停和 VOFA 数据采集。
+
+在 `4.Software/CLI-Tool/` 中启动交互工具，设备默认显示为 `foc0`：
+
+```powershell
+python run_shell.py shell
+```
+
+连接后调用：
+
+```python
+foc0.motor.set_current(1.0)
+foc0.motor.set_velocity(5.0)
+foc0.motor.set_position(12.5663706)
+```
+
+- `set_current(target)`：切换到电流/转矩模式，目标为 q 轴电流，单位 A，绝对值不得超过 `focMotor.config.currentLimit`。
+- `set_velocity(target)`：切换到速度模式，目标为机械角速度，单位 rad/s，绝对值不得超过 `focMotor.config.velocityLimit`。
+- `set_position(target)`：切换到位置模式，目标为从本次上电编码器累计坐标原点计算的绝对多圈机械角，单位 rad。`4π` 表示正向两圈；位置误差直接使用 `target - estimateAngle`，不得折算为单圈最短路径。
+- 三种设置命令将模式与目标作为同一事务更新。同一控制模式下重复设置目标时只原子更新目标，保持 PID、力矩和位置轨迹连续；只有实际切换控制模式时才停止并复位 PID，更新模式和目标后恢复原运行状态。电机原本停止时保持停止，等待 `!START`。
+- 三个方法返回 `bool`：`true` 表示目标已接受，`false` 表示 NaN/Inf、超过限制、模式无效或运行恢复失败。原有 CDC `!START`、`!STOP`、`!DISABLE` 保持兼容。
+
+实现位于 `Platform/CmdCtrlMotor/cmd_ctrl_motor.*`，对象树入口位于 `UserApp/protocols/cmd_protocol.cpp`，多圈位置反馈来自 `EncoderBase::GetFullAngle()`。修改接口时同步更新固件 README、本节和上位机调用方，并至少执行 Release 构建；涉及目标单位、模式切换或启停语义时必须进行受控硬件验证。
+
+向 `MakeProtocolDefinitions()` 增加 Fibre 函数后，检查 `build/Release/**/*.su` 中 `MakeObjTree()` 的静态栈占用；对象树在 `commTask` 中构造，当前测得 816 B，因此该任务栈为 1536 B。不要只看链接器 RAM 百分比：若对象树构造踩栈，可能出现通信仍有响应但 FOC 未进入 ready 的假象。
+
+复位后没有机械校准动作不一定是故障：只有启动日志出现 `record=valid align=flash` 时才表示正常复用了 Flash 对齐记录。若 `!START` 返回 `motor not ready`，在复位前先打开 USART3 日志并检查：
+
+- `[err] create task focControlTask failed`：任务或 FreeRTOS 堆不足。
+- `[foc] init failed`：PWM、编码器或 FOC 初始化失败。
+- 有 `[foc] ...` 但没有 `[foc] ready`：初始化中断、阻塞或栈破坏。
+- 出现 `[foc] ready` 后仍拒绝启动：检查 `CmdCtrlMotor::ready_` 的写入和内存破坏。
+
 ## 配置串口采集器
 
 编辑 `4.Software/FOC-Serial-Analyzer/config.json`，保存长期使用的配置：
@@ -265,6 +301,30 @@ python serial_logger.py --duration 33 --send '5:!START' --send '30:!STOP' --fina
 
 两次 25 秒验收均无超调和粘滑跳变：10%–90% 上升时间约 `4.49–4.66 s`，±0.1 rad 稳定时间约 `5.50–5.66 s`，末 5 秒平均绝对误差约 `0.0011–0.0030 rad`，位置标准差约 `0.00016–0.00019 rad`，峰值 `|iq|` 约 `0.70–0.75 A`。这些值只对当时硬件、负载和目标有效；更换电机、惯量、母线电压、负载或目标轨迹后重新执行长时验收。
 
+2026-07-25 在当前固定电机上完成了无扰动保持和单次大外力扰动的板级收敛测试。当前已烧录、已验证的扰动候选参数为：
+
+- `pidAngle = {P=3.0, I=0, D=0, outputRamp=0, limit=3.0 rad/s}`。
+- `pidVelocity = {P=0.22, I=0, D=0, outputRamp=80, limit=12}`；位置模式运行时输出还受 `positionCurrentLimit` 约束。
+- `lpfVelocity = 40 ms`。
+- `positionAccelerationLimit = 8 rad/s²`。
+- `positionCurrentLimit = 1.0 A`。
+- `positionFrictionCurrent = 0.22 A`，`positionDeadband = 0.005 rad`。补偿在死区外线性渐入，并与速度环输出相加后再次受位置模式 `1.0 A` 总限流约束。
+- 速度目标同时受角度 PID、`pidAngle.limit`、剩余制动距离和加速度斜坡约束，保持绝对多圈位置语义。
+- 速度环积分保持为零。板测中 `I=0.02` 会在静摩擦下形成“停住—积分累积—突然挣脱”的粘滑振荡，不要仅为减小静态误差重新开启积分；优先重新测量摩擦补偿。
+- PID 保留条件积分抗饱和；PID 与低通滤波器内部时间戳为 64 位，低通先计算整数微秒差再转浮点。
+
+启动位置模式时，如果主机尚未通过 `motor.set_position()` 显式设置目标，`!START` 在使能临界区内锁存启动瞬间的实际累计位置；若已显式设置目标，则保留该多圈绝对目标。不要用初始化完成时的旧位置替代启动瞬间位置。
+
+本轮有效证据：
+
+- 无扰动基线会话 `xhfoc_20260725_223701_925790`：`Started ok`，位置误差和速度为零，峰值 `|iq|≈0.043 A`，无自激。
+- 最终扰动会话 `xhfoc_20260725_223846_051810`：人工扰动峰值约 `2.413 rad`，峰值速度约 `17.48 rad/s`，峰值 `|iq|≈0.857 A`；没有反向超调和有效误差过零，约 `1.156 s` 进入并持续保持在 `0.02 rad` 范围，末段误差约 `0.0134 rad（0.77°）`。
+- 上述结论只覆盖当前电机、固定方式、母线电压和人工扰动。新的正反向 `±31.4 rad` 与更大多圈位置阶跃尚未用这组参数重新回归，不能写成全部位置工况已经验收。
+
+需要人工扰动时，先完成一轮不弹窗、明确要求用户不要触碰电机的无扰动基线。正式扰动轮必须先确认 `Started ok` 且 PWM 遥测已从零切换为有效调制，再显示 Windows 弹窗。弹窗文字明确说明：用户先点击“确定”，随后等待两声短蜂鸣和一声长蜂鸣，只在长蜂鸣时施加一次中等、短促扰动并立即松手。未看到弹窗、未使能、重复施加扰动或顺序错误的会话一律标记为作废，不用于调参。
+
+完整验收至少覆盖正反向 `±31.4 rad`、一个更大的多圈阶跃，以及从小到大的分级外力扰动。报告速度指令是否平滑减速、位置误差过零次数、反向峰值速度、稳定时间、末段 P95 误差、`iq` 是否保持在位置模式 `1.0 A` 限制内、限幅持续时间和肉眼可见卡顿；若仍有周期性卡顿，再检查 MT6816 校验失败、重复采样比例和机械摩擦，不要直接继续提高 PID。
+
 ## 编写版本提交信息并推送
 
 生成版本提交信息前，先查看近期提交正文、`git status --short`、实际 diff、未跟踪文件和验证结果。提交标题沿用以下格式：版本号单独一行，空一行后写 Conventional Commit 标题。正文只描述本次提交真实包含的内容。
@@ -359,7 +419,7 @@ python serial_logger.py --duration 33 --send '5:!START' --send '30:!STOP' --fina
 
 CLion、STM32CubeCLT、GNU Arm、STM32CubeMX、调试服务器、探针接口或安装路径变化时，重新读取本机配置并更新“使用 CLion 开发 STM32 固件”部分。至少分别验证一次命令行 CMake Preset 构建和 CLion 对应 Profile；调试链路变化时再验证 ST-LINK 连接、下载与断点。不要仅根据旧的 `.idea` 或 `CMakeCache.txt` 更新版本信息。
 
-固件 UART 参数、VOFA 通道数量或顺序、发送周期、帧格式发生变化时：
+固件 USB Native/Fibre JSON 对象接口、UART 参数、VOFA 通道数量或顺序、发送周期、帧格式发生变化时：
 
 1. 物理串口参数改变时更新 `config.json` 默认值。
 2. 同时更新 `decoder_config.json` 和本技能的“解释当前固件数据流”部分。

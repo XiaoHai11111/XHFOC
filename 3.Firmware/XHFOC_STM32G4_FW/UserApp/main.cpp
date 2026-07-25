@@ -193,6 +193,14 @@ static void ThreadFocControl(void* argument)
         calibrationSaved = encoderCalibrationStorage.Save(kMotorPolePairs, freshCalibration);
     }
 
+    // Entering position mode must not create an implicit step just because the
+    // fixed startup target differs from the actual shaft position. Hold the
+    // initialized multi-turn position until the host explicitly sets a target.
+    if (focInitOk && focMotor.config.controlMode == Motor::ANGLE)
+    {
+        focMotor.target = focMotor.GetLastEstimateAngle();
+    }
+
     Respond(*uart3StreamOutputPtr,
             "[foc] init=%d err=%d record=%s align=%s stored=%d linearity=%d noMag=%d csum=%d target=%.3f",
             focInitOk ? 1 : 0,

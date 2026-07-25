@@ -311,14 +311,105 @@ void Motor::CloseLoopControlTick()
             setPointAngle = target;
             if (runVelocityLoop)
             {
-                setPointVelocity = config.pidAngle(setPointAngle - estimateAngle);
-                setPointCurrentTarget = config.pidVelocity(setPointVelocity - estimateVelocity);
+                // Both values are absolute mechanical angles accumulated across
+                // revolutions. Do not wrap this error into a single-turn range.
+                const float multiTurnPositionError = setPointAngle - estimateAngle;
+                float desiredVelocity = config.pidAngle(multiTurnPositionError);
+
+                // Limit speed by the remaining braking distance, then slew the
+                // velocity command. A large position step therefore becomes a
+                // bounded accelerate/cruise/decelerate trajectory instead of an
+                // instantaneous full-speed command followed by rapid reversal.
+                const float accelerationLimit = std::fabs(config.positionAccelerationLimit);
+                if (accelerationLimit > 1e-3f)
+                {
+                    const float brakingVelocity =
+                            SQRT(2.0f * accelerationLimit *
+                                 std::fabs(multiTurnPositionError));
+                    if (desiredVelocity > brakingVelocity)
+                        desiredVelocity = brakingVelocity;
+                    else if (desiredVelocity < -brakingVelocity)
+                        desiredVelocity = -brakingVelocity;
+
+                    float velocityDt = controlLoopDeltaT_ *
+                                       static_cast<float>(velocityLoopDecimation_);
+                    if (velocityDt <= 0.0f || velocityDt > 0.05f)
+                        velocityDt = 1e-3f;
+
+                    const float maxVelocityStep = accelerationLimit * velocityDt;
+                    float velocityDelta = desiredVelocity - setPointVelocity;
+                    if (velocityDelta > maxVelocityStep)
+                        velocityDelta = maxVelocityStep;
+                    else if (velocityDelta < -maxVelocityStep)
+                        velocityDelta = -maxVelocityStep;
+                    setPointVelocity += velocityDelta;
+                }
+                else
+                {
+                    setPointVelocity = desiredVelocity;
+                }
+
+                const bool positionUsesCurrent =
+                        currentSense || ASSERT(phaseResistance);
+                float positionActuatorLimit = 0.0f;
+                if (positionUsesCurrent)
+                {
+                    positionActuatorLimit = std::fabs(config.positionCurrentLimit);
+                    const float motorCurrentLimit = std::fabs(config.currentLimit);
+                    if (positionActuatorLimit <= 1e-3f ||
+                        positionActuatorLimit > motorCurrentLimit)
+                    {
+                        positionActuatorLimit = motorCurrentLimit;
+                    }
+                    config.pidVelocity.limit = positionActuatorLimit;
+                }
+                else
+                {
+                    positionActuatorLimit = std::fabs(config.voltageLimit);
+                    config.pidVelocity.limit = positionActuatorLimit;
+                }
+
+                float positionActuatorTarget =
+                        config.pidVelocity(setPointVelocity - estimateVelocity);
+
+                // Coulomb-friction compensation for position holding. A small
+                // deadband prevents chatter at the encoder noise floor, while
+                // the linear blend avoids a discontinuous current step.
+                if (positionUsesCurrent)
+                {
+                    const float absPositionError =
+                            std::fabs(multiTurnPositionError);
+                    const float deadband =
+                            std::fabs(config.positionDeadband);
+                    const float frictionCurrent =
+                            std::fabs(config.positionFrictionCurrent);
+                    if (frictionCurrent > 0.0f &&
+                        absPositionError > deadband)
+                    {
+                        const float blendRange =
+                                std::fmax(4.0f * deadband, 1e-3f);
+                        const float blend = CONSTRAINT(
+                                (absPositionError - deadband) / blendRange,
+                                0.0f,
+                                1.0f);
+                        positionActuatorTarget +=
+                                (multiTurnPositionError > 0.0f ? 1.0f : -1.0f) *
+                                frictionCurrent * blend;
+                    }
+                }
+                setPointCurrentTarget = CONSTRAINT(positionActuatorTarget,
+                                                   -positionActuatorLimit,
+                                                   positionActuatorLimit);
             }
             break;
         case ControlMode_t::VELOCITY:
             if (runVelocityLoop)
             {
                 setPointVelocity = target;
+                config.pidVelocity.limit =
+                        (currentSense || ASSERT(phaseResistance))
+                        ? std::fabs(config.currentLimit)
+                        : std::fabs(config.voltageLimit);
                 setPointCurrentTarget = config.pidVelocity(setPointVelocity - estimateVelocity);
             }
             break;

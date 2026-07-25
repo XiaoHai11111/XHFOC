@@ -2,5 +2,7 @@ __pycache__/
 tests/__pycache__/
 *.py[cod]
 .venv/
+hil_*_stdout.log
+hil_*_stderr.log
 captures/*
 !captures/.gitkeep

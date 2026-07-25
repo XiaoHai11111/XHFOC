@@ -3,10 +3,13 @@
 
 float LowPassFilter::operator()(float _input)
 {
-    unsigned long time = micros();
-    float dt = ((float) time - (float) timeStamp) * 1e-6f;
+    const uint64_t time = micros();
+    // Subtract integer timestamps before converting to float. Converting each
+    // absolute microsecond timestamp first loses resolution as uptime grows and
+    // makes the filter update in visible, irregular steps.
+    float dt = static_cast<float>(time - timeStamp) * 1e-6f;
 
-    if (dt < 0.0f) dt = 1e-3f;
+    if (dt <= 0.0f) dt = 1e-3f;
     else if (dt > 0.3f)
     {
         outputLast = _input;

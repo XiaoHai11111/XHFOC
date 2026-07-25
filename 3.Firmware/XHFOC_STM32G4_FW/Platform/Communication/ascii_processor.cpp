@@ -51,11 +51,22 @@ void ASCII_protocol_parse_stream(const uint8_t* buffer, size_t len, StreamSink &
         bool read_active;
         uint32_t parse_buffer_idx;
     };
-    static AsciiParseState parse_states[StreamSink::CHANNEL_TYPE_UART5 + 1] = {};
+    // Only USB CDC and USART3 feed this parser in the current firmware. Avoid
+    // reserving a 256-byte line buffer for every unused ChannelType enum value.
+    static AsciiParseState parse_states[2] = {};
 
-    uint32_t channel_idx = static_cast<uint32_t>(response_channel.channelType);
-    if (channel_idx > static_cast<uint32_t>(StreamSink::CHANNEL_TYPE_UART5)) {
-        channel_idx = static_cast<uint32_t>(StreamSink::CHANNEL_TYPE_USB);
+    size_t channel_idx = 0U;
+    if (response_channel.channelType == StreamSink::CHANNEL_TYPE_USB)
+    {
+        channel_idx = 0U;
+    }
+    else if (response_channel.channelType == StreamSink::CHANNEL_TYPE_UART3)
+    {
+        channel_idx = 1U;
+    }
+    else
+    {
+        return;
     }
     AsciiParseState &state = parse_states[channel_idx];
     if (!state.initialized) {

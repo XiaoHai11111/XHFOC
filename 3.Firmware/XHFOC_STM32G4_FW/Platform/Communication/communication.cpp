@@ -19,7 +19,10 @@ volatile bool endpointListValid = false;
 osThreadId_t commTaskHandle;
 const osThreadAttr_t commTask_attributes = {
     .name = "commTask",
-    .stack_size = 1024,
+    // CommitProtocol() constructs the complete Fibre JSON object tree on this
+    // task. Three motor target functions raise the measured static stack use
+    // of MakeObjTree() to 816 bytes, so keep explicit headroom above 1 KiB.
+    .stack_size = 1536,
     .priority = (osPriority_t) osPriorityNormal,
 };
 
