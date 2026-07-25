@@ -87,6 +87,14 @@ _kernel32.ReadFile.argtypes = [
     wintypes.LPVOID,
 ]
 _kernel32.ReadFile.restype = wintypes.BOOL
+_kernel32.WriteFile.argtypes = [
+    wintypes.HANDLE,
+    wintypes.LPCVOID,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+    wintypes.LPVOID,
+]
+_kernel32.WriteFile.restype = wintypes.BOOL
 _kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 _kernel32.CloseHandle.restype = wintypes.BOOL
 _kernel32.QueryDosDeviceW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
@@ -179,6 +187,24 @@ class WindowsSerial:
         ):
             _raise_last_error(f"读取 {self.port} 失败")
         return buffer.raw[: received.value]
+
+    def write(self, data: bytes) -> int:
+        if self._handle is None:
+            raise OSError("串口已经关闭")
+        payload = bytes(data)
+        if not payload:
+            return 0
+        buffer = ctypes.create_string_buffer(payload)
+        written = wintypes.DWORD(0)
+        if not _kernel32.WriteFile(
+            self._handle,
+            buffer,
+            len(payload),
+            ctypes.byref(written),
+            None,
+        ):
+            _raise_last_error(f"写入 {self.port} 失败")
+        return int(written.value)
 
     def close(self) -> None:
         if self._handle is not None:

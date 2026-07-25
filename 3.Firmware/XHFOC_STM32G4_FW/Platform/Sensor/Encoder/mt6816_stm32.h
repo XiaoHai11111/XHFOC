@@ -7,18 +7,15 @@
 class MT6816 : public MT6816Base
 {
 public:
-    /*
-     * _quickCaliDataPtr is the start address where calibration data stored,
-     * in STM32F103CBT6 flash size is 128K (0x08000000 ~ 0x08020000), we use
-     * last 33K (32K clib + 1K user) for storage, and it starts from 0x08017C00.
-     */
+    // The legacy 32 KiB MT6816 linearity table is not enabled on this target.
+    // Its former STM32F103 address overlaps both the G431 application image and
+    // the reserved persistent-configuration page.
     explicit MT6816(SPI_HandleTypeDef* _spiHandle = &hspi1) :
-        MT6816Base((uint16_t*) (0x08017C00)),
+        MT6816Base(nullptr),
         spiHandle(_spiHandle)
     {}
 
-    // Called from the SPI1 interrupt (HAL_SPI_TxRxCpltCallback) to advance the
-    // non-blocking read state machine. Public so the ISR shim can reach it.
+
     void OnSpiTxRxComplete();
 
     // Enable the non-blocking (pipelined) read path. Must stay disabled during

@@ -26,6 +26,8 @@
     "file_prefix": "xhfoc",
     "read_size": 4096,
     "flush_interval_s": 1.0,
-    "fsync": true
+    "fsync": true,
+    "commands": [],
+    "final_command": ""
   }
 }

@@ -10,10 +10,12 @@
 #include "current_sense.h"
 #include "adspe_sense.h"
 #include "vofa_debug.h"
+#include "encoder_calibration_storage.h"
 #include <cstring>
 
 /* Default Entry -------------------------------------------------------*/
-Motor focMotor = Motor(7);
+constexpr uint32_t kMotorPolePairs = 7U;
+Motor focMotor = Motor(static_cast<int>(kMotorPolePairs));
 CmdCtrlMotor* motor = new CmdCtrlMotor(focMotor, 3, true, 30, 35, 180);
 MT6816 mt6816(&hspi1);
 Driver focDriver(12.0f);
@@ -78,6 +80,17 @@ static const char* KeyEventToString(KeyBase::Event event)
         case KeyBase::EVENT_SINGLE_CLICK: return "single";
         case KeyBase::EVENT_DOUBLE_CLICK: return "double";
         case KeyBase::EVENT_LONG_PRESS: return "long";
+        default: return "unknown";
+    }
+}
+
+static const char* CalibrationLoadResultToString(EncoderCalibrationStorage::LoadResult result)
+{
+    switch (result)
+    {
+        case EncoderCalibrationStorage::LoadResult::VALID: return "valid";
+        case EncoderCalibrationStorage::LoadResult::EMPTY: return "empty";
+        case EncoderCalibrationStorage::LoadResult::INVALID: return "invalid";
         default: return "unknown";
     }
 }
@@ -152,18 +165,41 @@ static void ThreadFocControl(void* argument)
     if (currentSense.gainB > 0.0f) currentSense.gainB = -currentSense.gainB;
     if (currentSense.gainC > 0.0f) currentSense.gainC = -currentSense.gainC;
 
-    focMotor.config.controlMode = Motor::TORQUE;
-    focMotor.target = 1.0f;
+    focMotor.config.controlMode = Motor::ANGLE;
+    focMotor.target = 3.140f;
 
     // Current loop runs once per PWM period (TIM1 10 kHz center-aligned),
     // so dt = 100 us; velocity loop is auto-decimated to 1 kHz internally.
     focMotor.SetControlLoopHz(10000.0f);
 
-    const bool focInitOk = focMotor.Init();
+    EncoderCalibrationStorage encoderCalibrationStorage;
+    EncoderCalibrationStorage::Data storedCalibration{};
+    const EncoderCalibrationStorage::LoadResult loadResult =
+            encoderCalibrationStorage.Load(kMotorPolePairs, storedCalibration);
+    const bool usedStoredCalibration =
+            (loadResult == EncoderCalibrationStorage::LoadResult::VALID);
+
+    const bool focInitOk = usedStoredCalibration
+            ? focMotor.Init(storedCalibration.zeroElectricAngleOffset,
+                            static_cast<EncoderBase::Direction>(storedCalibration.sensorDirection))
+            : focMotor.Init();
+
+    bool calibrationSaved = usedStoredCalibration;
+    if (focInitOk && !usedStoredCalibration)
+    {
+        EncoderCalibrationStorage::Data freshCalibration{};
+        freshCalibration.zeroElectricAngleOffset = focMotor.zeroElectricAngleOffset;
+        freshCalibration.sensorDirection = static_cast<int32_t>(mt6816.countDirection);
+        calibrationSaved = encoderCalibrationStorage.Save(kMotorPolePairs, freshCalibration);
+    }
+
     Respond(*uart3StreamOutputPtr,
-            "[foc] init=%d err=%d calib=%d noMag=%d csum=%d target=%.3f",
+            "[foc] init=%d err=%d record=%s align=%s stored=%d linearity=%d noMag=%d csum=%d target=%.3f",
             focInitOk ? 1 : 0,
             static_cast<int>(focMotor.error),
+            CalibrationLoadResultToString(loadResult),
+            usedStoredCalibration ? "flash" : "fresh",
+            calibrationSaved ? 1 : 0,
             mt6816.IsCalibrated() ? 1 : 0,
             mt6816.IsNoMagnetDetected() ? 1 : 0,
             mt6816.IsChecksumValid() ? 1 : 0,

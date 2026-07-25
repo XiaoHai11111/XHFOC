@@ -16,15 +16,18 @@ public:
         config.controlMode = TORQUE;
         config.voltageUsedForSensorAlign =2.0f;
         config.voltageLimit = 12.0f;
-        config.currentLimit = 1.0f;
+        config.currentLimit = 10.0f;
         config.velocityLimit = 500.0f;
 
         config.lpfCurrentQ = LowPassFilter{0.0005f};
         config.lpfCurrentD = LowPassFilter{0.0005f};
         config.lpfVelocity = LowPassFilter{0.06f};
+        config.lpfAngle = LowPassFilter{0.003f};
+
         config.pidCurrentQ = PidController{0.015f, 35.0f, 0.0f, 0.0f, 12.0f};
         config.pidCurrentD = PidController{0.01f, 20.0f, 0.0f, 0.0f, 12.0f};
-        config.pidVelocity = PidController{0.01f, 0.02f, 0.0f, 80.0f, 12.0f};
+        config.pidVelocity = PidController{0.30f, 0.02f, 0.0f, 80.0f, 12.0f};
+        config.pidAngle = PidController{10.0f, 0, 0, 0, 5.0f};
     }
 
     enum ControlMode_t

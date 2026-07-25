@@ -115,13 +115,15 @@
 
 ### EEPROM（模拟 Flash 持久化）
 
-- 方式：使用 Flash 尾页作为“模拟 EEPROM”区域，提供字节级读写。
+- 方式：链接脚本保留 Flash 最后一个 2 KiB 擦除页（`0x0801F800`–`0x0801FFFF`），当前使用其中前 256 B 作为逻辑配置区并提供字节级读写。
 - 结构：
   - `Platform/Memory/random_flash_utils.*`：页擦写与缓冲刷写。
   - `Platform/Memory/random_flash_interface.*`：EEPROM 类接口封装。
+  - `Platform/Memory/encoder_calibration_storage.*`：带 magic、schema、长度和 CRC32 的 FOC 编码器对齐记录。
 - 路线：
   - 先读入 RAM 缓冲，再按需写回 Flash，降低擦写频次。
-  - 为参数持久化（标定值、运行参数）预留统一接口。
+  - 首次启动或记录无效时执行 FOC 编码器方向/电角度零偏对齐并保存；后续启动验证记录后直接复用。
+  - MT6816 旧的 32 KiB 非线性查表地址来自 STM32F103，当前 G431 固件未为其保留空间，因此显式禁用，避免与应用镜像和配置页重叠。
 
 ### ADC采样移植技术路线（补充）
 

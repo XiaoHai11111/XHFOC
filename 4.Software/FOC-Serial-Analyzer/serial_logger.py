@@ -48,6 +48,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "read_size": 4096,
         "flush_interval_s": 1.0,
         "fsync": True,
+        "commands": [],
+        "final_command": "",
     },
 }
 
@@ -134,6 +136,27 @@ def validate_config(config: dict[str, Any]) -> None:
     _require_number(capture_cfg.get("flush_interval_s"), "capture.flush_interval_s", 0)
     if not isinstance(capture_cfg.get("fsync"), bool):
         raise ConfigError("capture.fsync 必须是 true 或 false")
+    commands = capture_cfg.get("commands")
+    if not isinstance(commands, list):
+        raise ConfigError("capture.commands 必须是数组")
+    for index, command in enumerate(commands):
+        if not isinstance(command, dict):
+            raise ConfigError(f"capture.commands[{index}] 必须是对象")
+        _require_number(command.get("at_s"), f"capture.commands[{index}].at_s", 0)
+        text = command.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > 128:
+            raise ConfigError(f"capture.commands[{index}].text 必须是 1~128 字符的非空字符串")
+        try:
+            text.encode("ascii")
+        except UnicodeEncodeError as exc:
+            raise ConfigError(f"capture.commands[{index}].text 当前只支持 ASCII") from exc
+    final_command = capture_cfg.get("final_command")
+    if not isinstance(final_command, str) or len(final_command) > 128:
+        raise ConfigError("capture.final_command 必须是不超过 128 字符的字符串")
+    try:
+        final_command.encode("ascii")
+    except UnicodeEncodeError as exc:
+        raise ConfigError("capture.final_command 当前只支持 ASCII") from exc
 
 
 def load_config(path: Path) -> dict[str, Any]:
@@ -170,12 +193,20 @@ def _safe_close(serial_port: Any) -> None:
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    content = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     temporary = path.with_name(path.name + ".tmp")
-    temporary.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
+    temporary.write_text(content, encoding="utf-8")
+    try:
+        os.replace(temporary, path)
+    except PermissionError:
+        # Some Windows antivirus/indexing filters briefly lock metadata.json
+        # while the capture is active. A direct rewrite is preferable to
+        # aborting the serial session (the raw stream remains authoritative).
+        path.write_text(content, encoding="utf-8")
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
 
 
 class CaptureWriter:
@@ -217,6 +248,7 @@ class CaptureWriter:
             "serial": copy.deepcopy(config["serial"]),
             "capture": copy.deepcopy(config["capture"]),
             "connections": [],
+            "commands": [],
             "errors": [],
         }
         _write_json_atomic(self.metadata_path, self.metadata)
@@ -236,6 +268,24 @@ class CaptureWriter:
 
     def add_error(self, message: str) -> None:
         self.metadata["errors"].append({"at": _utc_iso(), "message": message})
+        _write_json_atomic(self.metadata_path, self.metadata)
+
+    def command_sent(
+        self,
+        text: str,
+        sent_monotonic: float,
+        scheduled_at_s: Optional[float],
+        final: bool = False,
+    ) -> None:
+        self.metadata["commands"].append(
+            {
+                "text": text.rstrip("\r\n"),
+                "scheduled_at_s": scheduled_at_s,
+                "sent_elapsed_s": round(sent_monotonic - self._started_monotonic, 6),
+                "sent_at": _utc_iso(),
+                "final": final,
+            }
+        )
         _write_json_atomic(self.metadata_path, self.metadata)
 
     def write(self, data: bytes, now_monotonic: float) -> None:
@@ -319,6 +369,26 @@ def _open_serial(serial_api: Any, serial_cfg: dict[str, Any], port: str) -> Any:
     )
 
 
+def _command_payload(text: str) -> bytes:
+    return (text.rstrip("\r\n") + "\r\n").encode("ascii")
+
+
+def _write_command(serial_port: Any, text: str) -> int:
+    payload = _command_payload(text)
+    total = 0
+    while total < len(payload):
+        written = serial_port.write(payload[total:])
+        if written is None:
+            written = len(payload) - total
+        if not isinstance(written, int) or written <= 0:
+            raise OSError("串口命令写入未取得进展")
+        total += written
+    flush = getattr(serial_port, "flush", None)
+    if callable(flush):
+        flush()
+    return total
+
+
 def capture_serial(
     config: dict[str, Any],
     serial_api: Any,
@@ -337,6 +407,12 @@ def capture_serial(
     writer: Optional[CaptureWriter] = None
     stop_reason = "stop_requested"
     last_connect_error: Optional[str] = None
+    command_schedule = sorted(
+        (copy.deepcopy(item) for item in capture_cfg["commands"]),
+        key=lambda item: float(item["at_s"]),
+    )
+    next_command = 0
+    final_command = str(capture_cfg["final_command"]).strip()
 
     try:
         while not event.is_set():
@@ -387,6 +463,32 @@ def capture_serial(
                 print(f"[INFO] 已连接 {selected_port}，{framing}，{mode}")
                 print(f"[INFO] 会话目录: {writer.session_dir}")
 
+            command_failed = False
+            while next_command < len(command_schedule) and first_connected is not None:
+                command = command_schedule[next_command]
+                now = time.monotonic()
+                elapsed = now - first_connected
+                scheduled_at_s = float(command["at_s"])
+                if elapsed < scheduled_at_s:
+                    break
+                text = str(command["text"]).strip()
+                try:
+                    _write_command(serial_port, text)
+                except Exception as exc:
+                    message = f"串口命令发送失败（{text}）: {exc}"
+                    print(f"[ERROR] {message}")
+                    assert writer is not None
+                    writer.add_error(message)
+                    stop_reason = "command_error"
+                    command_failed = True
+                    break
+                assert writer is not None
+                writer.command_sent(text, now, scheduled_at_s)
+                print(f"[INFO] 已在 {elapsed:.3f}s 发送命令: {text}")
+                next_command += 1
+            if command_failed:
+                break
+
             try:
                 data = serial_port.read(capture_cfg["read_size"])
             except Exception as exc:
@@ -408,6 +510,19 @@ def capture_serial(
         if event.is_set() and stop_reason == "stop_requested":
             stop_reason = "user_stop"
     finally:
+        if serial_port is not None and final_command:
+            try:
+                now = time.monotonic()
+                _write_command(serial_port, final_command)
+                if writer is not None:
+                    writer.command_sent(final_command, now, None, final=True)
+                print(f"[INFO] 收尾命令已发送: {final_command}")
+                time.sleep(0.05)
+            except Exception as exc:
+                message = f"收尾命令发送失败（{final_command}）: {exc}"
+                print(f"[WARN] {message}")
+                if writer is not None:
+                    writer.add_error(message)
         _safe_close(serial_port)
         if writer is not None:
             writer.close(stop_reason)
@@ -467,9 +582,29 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--port", help="临时覆盖 serial.port，例如 COM8 或 auto")
     parser.add_argument("--duration", type=float, help="临时覆盖采集秒数；0 表示持续采集")
     parser.add_argument("--output-dir", type=Path, help="临时覆盖输出目录")
+    parser.add_argument(
+        "--send",
+        action="append",
+        metavar="SECONDS:COMMAND",
+        help="连接后定时发送 ASCII 命令，可重复，例如 2:!START",
+    )
+    parser.add_argument("--final-command", help="退出前发送的收尾命令，例如 !STOP")
     parser.add_argument("--check-config", action="store_true", help="校验并打印最终配置后退出")
     parser.add_argument("--list-ports", action="store_true", help="列出当前串口后退出")
     return parser
+
+
+def _parse_scheduled_command(value: str) -> dict[str, Any]:
+    delay_text, separator, command = value.partition(":")
+    if not separator or not command.strip():
+        raise ConfigError("--send 格式必须为 SECONDS:COMMAND，例如 2:!START")
+    try:
+        delay = float(delay_text)
+    except ValueError as exc:
+        raise ConfigError("--send 的 SECONDS 必须是数字") from exc
+    if delay < 0:
+        raise ConfigError("--send 的 SECONDS 不能为负数")
+    return {"at_s": delay, "text": command.strip()}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -482,6 +617,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             config["capture"]["duration_s"] = args.duration
         if args.output_dir:
             config["capture"]["output_dir"] = str(args.output_dir.expanduser().resolve())
+        if args.send:
+            config["capture"]["commands"] = [_parse_scheduled_command(item) for item in args.send]
+        if args.final_command is not None:
+            config["capture"]["final_command"] = args.final_command
         validate_config(config)
 
         if args.check_config:

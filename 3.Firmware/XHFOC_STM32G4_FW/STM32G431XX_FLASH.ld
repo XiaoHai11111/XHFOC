@@ -56,7 +56,8 @@ ENTRY(Reset_Handler)
 MEMORY
 {
 RAM (xrw)      : ORIGIN = 0x20000000, LENGTH = 32K
-FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 128K
+/* Keep the final 2 KiB erase page (0x0801F800-0x0801FFFF) for persistent data. */
+FLASH (rx)      : ORIGIN = 0x8000000, LENGTH = 126K
 }
 
 /* Highest address of the user mode stack */

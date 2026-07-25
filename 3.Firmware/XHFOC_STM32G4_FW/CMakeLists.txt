@@ -69,6 +69,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Platform/Communication/interface_uart.cpp
     Platform/Communication/interface_usb.cpp
     Platform/Driver/driver.cpp
+    Platform/Memory/encoder_calibration_storage.cpp
     Platform/Memory/random_flash_utils.cpp
     Platform/Sensor/AdspeSense/adspe_sense.cpp
     Platform/Sensor/CurrentSense/current_sense.cpp

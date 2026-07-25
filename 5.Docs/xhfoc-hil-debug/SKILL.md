@@ -1,6 +1,6 @@
 ---
 name: xhfoc-hil-debug
-description: 维护并使用 XHFOC 项目的固件、串口采集、VOFA 数据解析、AI 辅助硬件在环调试和版本提交流程。当 Codex 需要浏览本项目目录、检查 XHFOC_STM32G4_FW、配置或运行 FOC-Serial-Analyzer、解析 UART 或 VOFA 数据、编写版本提交信息，或在用户明确授权后提交并推送项目改动时使用本技能。
+description: 维护并使用 XHFOC 项目的 CLion/STM32 开发环境、固件、串口采集、VOFA 数据解析、AI 辅助硬件在环调试和版本提交流程。当 Codex 需要浏览本项目目录、检查或复现 CLion、CMake、STM32CubeCLT、编译、烧录与调试配置，维护 XHFOC_STM32G4_FW，运行 FOC-Serial-Analyzer，解析 UART 或 VOFA 数据，编写版本提交信息，或在用户明确授权后提交并推送项目改动时使用本技能。
 ---
 
 # XHFOC 硬件在环调试
@@ -20,6 +20,7 @@ E:\Projects\XHFOC\5.Docs\xhfoc-hil-debug\SKILL.md
 采集会话：[填写 captures 下的会话目录；没有则写“无”]
 实验条件：[填写固件版本、母线电压、电机与负载、控制模式、命令顺序；未知项明确写“未知”]
 预期现象：[填写正常结果或需要重点检查的问题]
+开发环境：[默认写“沿用当前 CLion/STM32CubeCLT 配置”；工具链、探针或路径有变化时明确填写]
 版本与 Git 操作：[填写“不涉及”“仅生成提交信息”“提交”或“提交并推送”；涉及版本时填写版本号]
 
 执行要求：
@@ -30,6 +31,9 @@ E:\Projects\XHFOC\5.Docs\xhfoc-hil-debug\SKILL.md
 5. 如果目录、串口参数、VOFA 帧格式、通道顺序或操作流程发生变化，同步更新本 SKILL 和相关配置。
 6. 生成提交信息前检查近期提交格式、git status、实际 diff 和验证结果，使用本技能中的版本提交模板，不把未执行的测试写成已通过。
 7. 只有在我明确要求提交或推送时才执行相应 Git 操作；推送前检查暂存内容、当前分支和远端，禁止 force push。
+8. 处理构建或调试问题时先检查 CMakePresets.json、工具链文件、.ioc 和实际工具版本；不要把被忽略的 .idea、CMakeCache.txt 或本机绝对路径当作跨机器唯一事实。
+9. 只有在我明确要求烧录或复位硬件时才操作 ST-LINK；执行前说明将使用的构建类型、ELF 路径和当前未提交控制参数，执行后报告芯片识别、下载校验和复位结果。
+10. 进行闭环调参时，每次复位后先等待校准完成，再发送 `!START`；采集结束先发送 `!STOP`，随后用 ST-LINK 复位。每轮只改变有明确假设的一组参数，并用长时复测排除粘滑和积分累积造成的假收敛。
 
 最终请用中文说明：结论、证据、修改文件、验证结果、遗留风险和建议的下一步。
 ```
@@ -45,6 +49,119 @@ E:\Projects\XHFOC\5.Docs\xhfoc-hil-debug\SKILL.md
 - 当以上目录或工作流改变时，同步维护 `5.Docs/xhfoc-hil-debug/` 中的本技能。
 
 修改前检查仓库状态，保留用户的无关改动，不要把生成的采集数据当作源代码。
+
+## 使用 CLion 开发 STM32 固件
+
+当前开发机配置如下。版本、安装路径和本地 CLion 配置可能变化，处理环境问题时先重新读取实际配置，再同步维护本节。
+
+### 当前 IDE 与工具链
+
+- IDE：CLion `2025.3.3`，当前可执行文件为 `D:\Program Files (x86)\CLion 2025.3.3\bin\clion64.exe`。
+- CLion 工具链名称：`STM32`，类型为 Windows System Toolset。
+- STM32CubeCLT：`D:\Program Files (x86)\STM32CubeCLT_1.21.0`。
+- CMake：STM32CubeCLT 自带 `3.28.1`。
+- Ninja：STM32CubeCLT 自带 `1.11.1`。
+- GNU Arm 编译器：`arm-none-eabi-gcc 14.3.1`，发行标识为 `GNU Tools for STM32 14.3.rel1.20251027-0700`。
+- CLion 调试器：JetBrains 随 IDE 提供的 GDB `16.3`；终端中的 `arm-none-eabi-gdb` 来自 STM32CubeCLT，版本为 `15.2.90.20241229-git`。
+- STM32CubeMX：`D:\Program Files (x86)\STM32CubeMX\STM32CubeMX.exe`，当前文件版本标识为 `>6.17.0-RC5`。
+- OpenOCD：`D:\Program Files (x86)\xpack-openocd-0.12.0-7\bin\openocd.exe`，版本为 `xPack OpenOCD 0.12.0+dev-02228-ge5888bda3-dirty`；当前项目调试目标不使用它。
+
+CLion 的本机工具链配置位于 `%APPDATA%\JetBrains\CLion2025.3\options\windows\toolchains.xml`，嵌入式工具路径位于同目录的 `embedded-support.xml`。不要把这些用户级文件提交到仓库，也不要在 Skill 中记录凭据、账号或其他无关个人配置。
+
+### 当前工程与构建配置
+
+- 固件工程根目录：`E:\Projects\XHFOC\3.Firmware\XHFOC_STM32G4_FW`。
+- 目标 MCU：`STM32G431RBT6`；以 `XHFOC_STM32G4_FW.ioc`、`STM32G431XX_FLASH.ld` 和 `cmake/stm32cubemx/CMakeLists.txt` 共同确认。
+- 工程使用 CMake、Ninja 和 `cmake/gcc-arm-none-eabi.cmake`；`cmake/starm-clang.cmake` 存在，但当前未启用。
+- 语言标准为 C11 和 C++17，并生成 `compile_commands.json` 供 CLion 索引。
+- CPU 选项为 Cortex-M4、FPv4-SP-D16、硬件浮点 ABI。
+- Debug 使用 `-Og -g3`；Release 使用 `-Os -g0`。
+- C++ 关闭 RTTI、异常和线程安全静态初始化；链接使用 `nano.specs`、垃圾段回收、map 文件和内存占用报告，并启用浮点 `printf/scanf`。
+- 主要产物为 `XHFOC_STM32G4_FW.elf` 和对应 `.map`；当前 CMake 没有自动生成 `.hex` 或 `.bin` 的 post-build 步骤。
+
+`CMakePresets.json` 是命令行和 AI 构建的首选事实源：
+
+```powershell
+cd E:\Projects\XHFOC\3.Firmware\XHFOC_STM32G4_FW
+cmake --preset Debug
+cmake --build --preset Debug -j 8
+cmake --preset Release
+cmake --build --preset Release -j 8
+```
+
+预设使用 Ninja，命令行输出目录为 `build/Debug` 和 `build/Release`。当前 CLion 本地启用了 `Debug-STM32` 与 `Release-STM32` 两个 Profile，分别传入 `--preset=Debug` 和 `--preset=Release`，并选中 `Release-STM32`；CLion 管理的本地输出目录为 `cmake-build-debug-stm32` 和 `cmake-build-release-stm32`。
+
+不要混用不同输出目录中的 `CMakeCache.txt` 来判断当前配置。出现编译器或路径变化时，先让对应 Profile 重新配置；未经用户要求不要删除整个构建目录。`.idea/`、`build/` 和 `cmake-build-*-stm32/` 均为被忽略的本机状态，跨机器复现时以受版本控制的 `CMakePresets.json`、CMake 工具链文件、`.ioc` 和链接脚本为准。
+
+### 当前烧录与调试配置
+
+- CLion 调试服务器名称为 `ST-LINK`，使用 STM32CubeCLT 的 `ST-LINK_gdbserver.exe 7.13.0`。
+- STM32CubeProgrammer 路径为 `D:\Program Files (x86)\STM32CubeCLT_1.21.0\STM32CubeProgrammer\bin`。
+- 调试探针接口为 SWD，GDB Server 端口为 `61234`，启动等待为 `500 ms`。
+- SWO 当前关闭；预留端口为 `61235`。
+- 本机调试配置保存在被忽略的 `.idea/debugServers/ST_LINK.xml`，因此新电脑需要在 CLion 中重新建立同等配置。
+
+处理“CLion 能编译但命令行不能编译”时，先检查终端中的 `cmake`、`ninja`、`arm-none-eabi-gcc` 和 `arm-none-eabi-gdb` 是否解析到 STM32CubeCLT 1.21.0。处理“能编译但不能调试”时，依次检查 ST-LINK 连接、SWD 接线、GDB Server 路径、STM32CubeProgrammer 路径、端口占用和目标芯片设置；不要把 OpenOCD 配置误认为当前实际调试链路。
+
+### 由 AI 编译、烧录并复位
+
+以下流程已于 2026-07-18 使用当前 CLion `Release-STM32` 构建目录、STM32CubeProgrammer `2.22.0` 和 ST-LINK V2 实际验证。CLion 交互调试继续使用 `ST-LINK_gdbserver.exe`；AI 或终端执行一次性下载时，使用同一 STM32CubeCLT 中的 `STM32_Programmer_CLI.exe`，不要同时启动两个占用探针的服务器。
+
+烧录属于硬件状态修改。仅在用户明确要求后执行，并先完成以下检查：
+
+1. 运行 `git status --short` 并检查实际 diff，明确烧录的是提交版本还是未提交工作区。
+2. 检查控制模式、目标值、电流/电压限幅和上电使能逻辑；提示电机可能运动，并确认机械与供电条件安全。
+3. 检查 `ST-LINK_gdbserver`、OpenOCD、GDB 或其他 STM32CubeProgrammer 实例是否占用探针；不要直接终止用户正在使用的调试会话。
+4. 确认 ELF 来自当前源码和正确的 Debug/Release 目录，不要烧录旧时间戳产物。
+
+使用 CLion 当前 `Release-STM32` 输出目录编译：
+
+```powershell
+cd E:\Projects\XHFOC\3.Firmware\XHFOC_STM32G4_FW
+& 'D:\Program Files (x86)\STM32CubeCLT_1.21.0\CMake\bin\cmake.exe' `
+  --build 'cmake-build-release-stm32' `
+  --target XHFOC_STM32G4_FW `
+  -j 8
+```
+
+编译后检查产物时间、大小和段占用：
+
+```powershell
+$elf = 'E:\Projects\XHFOC\3.Firmware\XHFOC_STM32G4_FW\cmake-build-release-stm32\XHFOC_STM32G4_FW.elf'
+Get-Item -LiteralPath $elf | Select-Object FullName, Length, LastWriteTime
+Get-FileHash -LiteralPath $elf -Algorithm SHA256
+& 'D:\Program Files (x86)\STM32CubeCLT_1.21.0\GNU-tools-for-STM32\bin\arm-none-eabi-size.exe' $elf
+```
+
+只枚举 ST-LINK、不连接目标：
+
+```powershell
+$programmer = 'D:\Program Files (x86)\STM32CubeCLT_1.21.0\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe'
+& $programmer -l st-link-only
+```
+
+通过 SWD 下载 ELF、逐字节校验、软件复位并运行：
+
+```powershell
+$programmer = 'D:\Program Files (x86)\STM32CubeCLT_1.21.0\STM32CubeProgrammer\bin\STM32_Programmer_CLI.exe'
+$elf = 'E:\Projects\XHFOC\3.Firmware\XHFOC_STM32G4_FW\cmake-build-release-stm32\XHFOC_STM32G4_FW.elf'
+& $programmer `
+  -c port=SWD mode=NORMAL reset=SWrst freq=4000 `
+  -w $elf `
+  -v `
+  -rst `
+  -run
+```
+
+确认命令退出码为 0，并同时看到以下关键信息后才能报告成功：
+
+- 目标为 `STM32G43x/G44x`、Device ID 为 `0x468`、NVM 为 `128 KBytes`。
+- `File download complete`。
+- `Download verified successfully`。
+- `Software reset is performed`。
+- `Core run`。
+
+不要把 ST-LINK 序列号写入 Skill、提交信息或公开报告。只需要复位时，保持同样的连接参数并执行 `-rst -run`，不要重复下载。Normal 模式连接失败时，先退出 CLion 调试会话并排查探针占用、供电与 SWD 接线；只有固件导致普通连接失败且 NRST 已接入时，才改用 `mode=UR reset=HWrst` 连接后烧录。不要为了恢复连接而默认全片擦除或修改 Option Bytes。
 
 ## 配置串口采集器
 
@@ -120,6 +237,33 @@ python decode_capture.py
 不要在 `metadata.json` 状态为 `capturing` 时正常解析。先停止采集，确保原始文件大小和块索引稳定。仅在明确需要临时快照时使用 `--allow-incomplete`。
 
 在本仓库中交给 AI 分析时，提供采集会话目录路径、实验问题和预期行为即可。需要向外部上传时，至少提供 `metadata.json`、`decoded/parse_summary.json` 和 `decoded/vofa.csv`；需要审计协议完整性、丢帧、截断帧、重连或 ASCII 事件时，再提供 `serial_raw.bin` 和 `chunks.jsonl`。同时说明固件版本、电机与负载条件、命令顺序和故障大致时间。采集前尽量填写 `config.json` 中的 `experiment` 字段。
+
+VOFA JustFloat 没有 CRC，ASCII 命令响应与二进制帧共用串口时，极少数错位候选可能产生不符合物理范围的浮点值。分析控制性能前统计并报告拒绝帧数；至少拒绝 NaN/Inf、角度或目标绝对值大于 `1000 rad`、速度绝对值大于 `1000 rad/s`、以及 `iA/iB/iC/iq/id` 任一绝对值大于 `20 A` 的帧。不要让单个明显伪帧决定峰值电流或稳定性结论；原始数据仍保留用于审计。
+
+## 自动闭环调参与验收
+
+用户明确授权修改、编译、烧录、控制电机和采集数据后，按以下顺序执行每一轮：
+
+1. 记录当前 PID、目标、控制频率、限幅和 Git diff，只修改本轮假设涉及的参数。
+2. 用 `Release-STM32` 构建并检查 RAM/FLASH 占用；下载 ELF、执行 verify、复位并确认 Core run。
+3. 复位后先检查启动日志：`record=valid align=flash` 表示已复用 Flash 中的 FOC 编码器对齐结果，`record=empty/invalid align=fresh` 表示本次执行了方向与电角度零偏对齐并尝试保存。首次对齐时预留至少 5 秒；无论哪种路径，都必须等待 `[foc] ready` 后再发送 `!START`。采集器独占 COM8 期间定时发送启动和停止命令，例如：
+
+```powershell
+python serial_logger.py --duration 33 --send '5:!START' --send '30:!STOP' --final-command '!STOP'
+```
+
+4. 采集结束后立即用 ST-LINK 执行 `-rst -run`，让固件回到校准后等待 `!START` 的安全状态；再解码和分析。
+5. 计算初始角度、目标阶跃、10%–90% 上升时间、±0.1 rad 和 2% 稳定时间、超调、末 5 秒平均/MAE/P95 误差、位置标准差、峰值速度、`iq/id` 与相电流峰值。
+6. 至少使用 20–25 秒运行窗口检查慢积分和机械粘滑；候选参数必须独立复测。短时误差很小但随后周期性跳动不算收敛。
+7. 任何一轮出现非有限角度、持续振荡、异常电流、通信丢失或无法确认 STOP 时，停止提高增益，发送 STOP 并复位后再诊断。
+
+2026-07-18 在当前电机、目标角度 `31.4 rad`、角度/速度环 `1 kHz` 和电流环 `10 kHz` 条件下，已验证的候选参数为：
+
+- `pidAngle = {P=10.0, I=0, D=0, outputRamp=0, limit=5.0 rad/s}`。
+- `pidVelocity = {P=0.30, I=0.02, D=0, outputRamp=80, limit=12}`；初始化后输出限幅仍受 `currentLimit` 约束。
+- `Motor::Init()` 保留显式配置且更严格的角度 PID limit，仅在该 limit 禁用或超过 `velocityLimit` 时回退到全局速度限制。
+
+两次 25 秒验收均无超调和粘滑跳变：10%–90% 上升时间约 `4.49–4.66 s`，±0.1 rad 稳定时间约 `5.50–5.66 s`，末 5 秒平均绝对误差约 `0.0011–0.0030 rad`，位置标准差约 `0.00016–0.00019 rad`，峰值 `|iq|` 约 `0.70–0.75 A`。这些值只对当时硬件、负载和目标有效；更换电机、惯量、母线电压、负载或目标轨迹后重新执行长时验收。
 
 ## 编写版本提交信息并推送
 
@@ -212,6 +356,8 @@ python decode_capture.py
 围绕帧尾重新同步，并检查候选帧长度和数值合理性。将有效帧之间的 ASCII 字节作为独立日志流处理。在分析报告中标记数据间隙、重连边界、截断帧、NaN 或 Inf，以及元数据错误。
 
 ## 维护与验证
+
+CLion、STM32CubeCLT、GNU Arm、STM32CubeMX、调试服务器、探针接口或安装路径变化时，重新读取本机配置并更新“使用 CLion 开发 STM32 固件”部分。至少分别验证一次命令行 CMake Preset 构建和 CLion 对应 Profile；调试链路变化时再验证 ST-LINK 连接、下载与断点。不要仅根据旧的 `.idea` 或 `CMakeCache.txt` 更新版本信息。
 
 固件 UART 参数、VOFA 通道数量或顺序、发送周期、帧格式发生变化时：
 

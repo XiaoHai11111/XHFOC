@@ -17,6 +17,12 @@ public:
         if (!isInitialized)
             init();
 
+        if (_address < 0 || static_cast<uint32_t>(_address) >= EEPROM_SIZE)
+        {
+            isValid = false;
+            return 0xFFU;
+        }
+
         return EEPROMReadBufferedByte(_address);
     }
 
@@ -26,10 +32,24 @@ public:
         if (!isInitialized)
             init();
 
+        if (_address < 0 || static_cast<uint32_t>(_address) >= EEPROM_SIZE)
+        {
+            isValid = false;
+            return;
+        }
+
         if (EEPROMReadBufferedByte(_address) != _value)
         {
-            dirtyBuffer = true;
             EEPROMWriteBufferedByte(_address, _value);
+            if (commitASAP)
+            {
+                isValid = EEPROMBufferFlush();
+                dirtyBuffer = !isValid;
+            }
+            else
+            {
+                dirtyBuffer = true;
+            }
         }
     }
 
@@ -47,7 +67,13 @@ public:
         if (!isInitialized)
             init();
 
-        uint16_t offset = _offset;
+        if (_offset < 0 || static_cast<uint32_t>(_offset) + sizeof(T) > EEPROM_SIZE)
+        {
+            isValid = false;
+            return _t;
+        }
+
+        uint16_t offset = static_cast<uint16_t>(_offset);
         auto* _pointer = (uint8_t*) &_t;
 
         for (uint16_t count = sizeof(T); count; --count, ++offset)
@@ -65,22 +91,37 @@ public:
         // Copy the data from the flash to the buffer if not yet
         if (!isInitialized) init();
 
-        uint16_t offset = _idx;
+        if (_idx < 0 || static_cast<uint32_t>(_idx) + sizeof(T) > EEPROM_SIZE)
+        {
+            isValid = false;
+            return _t;
+        }
+
+        uint16_t offset = static_cast<uint16_t>(_idx);
 
         const auto* _pointer = (const uint8_t*) &_t;
 
+        bool changed = false;
         for (uint16_t count = sizeof(T); count; --count, ++offset)
         {
-            EEPROMWriteBufferedByte(offset, *_pointer++);
+            const uint8_t value = *_pointer++;
+            if (EEPROMReadBufferedByte(offset) != value)
+            {
+                EEPROMWriteBufferedByte(offset, value);
+                changed = true;
+            }
+        }
+
+        if (!changed)
+        {
+            return _t;
         }
 
         if (commitASAP)
         {
             // Save the data from the buffer to the flash right away
-            EEPROMBufferFlush();
-
-            dirtyBuffer = false;
-            isValid = true;
+            isValid = EEPROMBufferFlush();
+            dirtyBuffer = !isValid;
         } else
         {
             // Delay saving the data from the buffer to the flash. Just flag and wait for commit() later
@@ -91,7 +132,7 @@ public:
     }
 
 
-    void Commit()
+    bool Commit()
     {
         if (!isInitialized)
             init();
@@ -99,17 +140,17 @@ public:
         if (dirtyBuffer)
         {
             // Save the data from the buffer to the flash
-            EEPROMBufferFlush();
-
-            dirtyBuffer = false;
-            isValid = true;
+            isValid = EEPROMBufferFlush();
+            dirtyBuffer = !isValid;
         }
+
+        return isValid;
     }
 
 
     static uint16_t TotalSize()
     {
-        return EEPROM_SIZE + 1;
+        return EEPROM_SIZE;
     }
 
 

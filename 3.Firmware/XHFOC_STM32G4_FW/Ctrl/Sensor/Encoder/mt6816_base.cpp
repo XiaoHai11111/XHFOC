@@ -7,8 +7,8 @@ bool MT6816Base::Init()
     ReadRawData();
 
     // Check if the stored calibration data are valid
-    angleData.rectifyValid = true;
-    for (int32_t i = 0; i < RESOLUTION; i++)
+    angleData.rectifyValid = (quickCaliDataPtr != nullptr);
+    for (int32_t i = 0; angleData.rectifyValid && i < RESOLUTION; i++)
     {
         if (quickCaliDataPtr[i] == 0xFFFF)
             angleData.rectifyValid = false;

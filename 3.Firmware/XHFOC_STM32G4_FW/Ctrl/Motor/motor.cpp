@@ -40,7 +40,13 @@ bool Motor::Init(float _zeroElectricOffset, EncoderBase::Direction _encoderDir)
     {
         config.pidVelocity.limit = config.voltageLimit;
     }
-    config.pidAngle.limit = config.velocityLimit;
+    // Keep an explicitly configured, stricter position-loop velocity limit.
+    // Only fall back to the motor-wide limit when the PID limit is disabled or
+    // exceeds what the motor configuration permits.
+    if (config.pidAngle.limit <= 0.0f || config.pidAngle.limit > config.velocityLimit)
+    {
+        config.pidAngle.limit = config.velocityLimit;
+    }
 
     return InitFOC(_zeroElectricOffset, _encoderDir);
 }
