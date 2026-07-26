@@ -18,19 +18,24 @@ public:
         config.voltageLimit = 12.0f;
         config.currentLimit = 10.0f;
         config.velocityLimit = 500.0f;
-        config.positionAccelerationLimit = 30.0f; //加速/减速斜坡
-        config.positionCurrentLimit = 2.5f;      //位置模式最大电流
+        config.positionVelocityLimit = 6.0f;
+        config.positionVelocitySafetyLimit = 8.0f;
+        config.positionAccelerationLimit = 12.0f;
+        config.positionDecelerationLimit = 18.0f;
+        config.positionCurrentLimit = 1.2f;
+        config.positionAccelerationCurrentGain = 0.005f;
         config.positionFrictionCurrent = 0.22f;
+        config.positionStictionCurrent = 0.35f;
         config.positionDeadband = 0.005f;
 
         config.lpfCurrentQ = LowPassFilter{0.0005f};
         config.lpfCurrentD = LowPassFilter{0.0005f};
-        config.lpfVelocity = LowPassFilter{0.04f};
+        config.lpfVelocity = LowPassFilter{0.012f};
         config.lpfAngle = LowPassFilter{0.003f};
 
         config.pidCurrentQ = PidController{0.015f, 35.0f, 0.0f, 0.0f, 12.0f};
         config.pidCurrentD = PidController{0.01f, 20.0f, 0.0f, 0.0f, 12.0f};
-        config.pidVelocity = PidController{0.22f, 0.0f, 0.0f, 80.0f, 12.0f};
+        config.pidVelocity = PidController{0.10f, 0.0f, 0.0f, 80.0f, 12.0f};
         config.pidAngle = PidController{3.0f, 0, 0, 0, 10.0f};
     }
 
@@ -55,9 +60,14 @@ public:
         float voltageLimit{};
         float currentLimit{};
         float velocityLimit{};
+        float positionVelocityLimit{};
+        float positionVelocitySafetyLimit{};
         float positionAccelerationLimit{};
+        float positionDecelerationLimit{};
         float positionCurrentLimit{};
+        float positionAccelerationCurrentGain{};
         float positionFrictionCurrent{};
+        float positionStictionCurrent{};
         float positionDeadband{};
         float voltageUsedForSensorAlign{};
         ControlMode_t controlMode = ANGLE;
@@ -77,6 +87,28 @@ public:
         float estAngle{};
         float rawVelocity{};
         float estVelocity{};
+    };
+
+    struct MotionTelemetry_t
+    {
+        float trajectoryPosition{};
+        float trajectoryVelocity{};
+        float trajectoryAcceleration{};
+        float velocityCommand{};
+        float currentCommand{};
+        float positionError{};
+        float velocityError{};
+        float frictionCurrent{};
+        uint32_t limitFlags{};
+    };
+
+    enum LimitFlag_t : uint32_t
+    {
+        LIMIT_NONE = 0U,
+        LIMIT_TRAJECTORY_VELOCITY = 1U << 0,
+        LIMIT_VELOCITY_COMMAND = 1U << 1,
+        LIMIT_POSITION_CURRENT = 1U << 2,
+        LIMIT_VOLTAGE = 1U << 3
     };
 
     typedef enum
@@ -104,6 +136,7 @@ public:
     float GetLastEstimateAngle() const;
     float GetLastEstimateVelocity() const;
     DqCurrent_t GetLastDqCurrent() const;
+    MotionTelemetry_t GetMotionTelemetry() const;
 
 
     float target = 0;
@@ -124,6 +157,9 @@ private:
     bool AlignSensor();
     void CloseLoopControlTick();
     void FocOutputTick();
+    void ResetPositionTrajectory(float position);
+    void PlanPositionTrajectory(float targetPosition);
+    void UpdatePositionTrajectory(float dt);
     float VelocityOpenLoopTick(float _target);
     float AngleOpenLoopTick(float _target);
     void SetPhaseVoltage(float _voltageQ, float _voltageD, float _angleElectrical);
@@ -148,6 +184,22 @@ private:
     uint16_t positionLoopDecimation_ = 1;
     uint16_t positionLoopCounter_ = 0;
     float currentSetpointRamp_ = 600.0f; // A/s
+
+    MotionTelemetry_t motionTelemetry_{};
+    bool trajectoryPlanned_ = false;
+    float trajectoryTarget_ = 0.0f;
+    float trajectoryElapsed_ = 0.0f;
+    float trajectoryTotalTime_ = 0.0f;
+    float trajectoryAccelTime_ = 0.0f;
+    float trajectoryCruiseTime_ = 0.0f;
+    float trajectoryDecelTime_ = 0.0f;
+    float trajectoryInitialPosition_ = 0.0f;
+    float trajectoryFinalPosition_ = 0.0f;
+    float trajectoryInitialVelocity_ = 0.0f;
+    float trajectoryReachedVelocity_ = 0.0f;
+    float trajectoryAcceleration_ = 0.0f;
+    float trajectoryDeceleration_ = 0.0f;
+    float trajectoryAccelEndPosition_ = 0.0f;
 };
 
 

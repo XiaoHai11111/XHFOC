@@ -48,6 +48,7 @@ protected:
     uint64_t angleTimestamp = 0;
     float velocityLast = 0.0f;
     uint64_t velocityTimestamp = 0;
+    float velocityEstimate = 0.0f;
     int32_t rotationCount = 0;
     int32_t rotationCountLast = 0;
 };

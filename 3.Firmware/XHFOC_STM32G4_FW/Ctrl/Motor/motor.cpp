@@ -74,6 +74,9 @@ void Motor::SetEnable(bool _enable)
 {
     if (_enable)
     {
+        ResetPositionTrajectory(estimateAngle);
+        config.pidVelocity.Reset();
+        config.pidAngle.Reset();
         // Keep the power stage disabled until all software state is ready. This
         // ordering also makes an enable request safe if the FOC task preempts the
         // caller between these two operations.
@@ -99,6 +102,7 @@ void Motor::SetEnable(bool _enable)
     config.pidCurrentD.Reset();
     config.pidVelocity.Reset();
     config.pidAngle.Reset();
+    ResetPositionTrajectory(estimateAngle);
     if (driver)
     {
         driver->SetEnable(false);
@@ -158,6 +162,11 @@ DqCurrent_t Motor::GetLastDqCurrent() const
     return current;
 }
 
+Motor::MotionTelemetry_t Motor::GetMotionTelemetry() const
+{
+    return motionTelemetry_;
+}
+
 void Motor::SetControlLoopHz(float _hz)
 {
     if (_hz > 1.0f)
@@ -193,6 +202,7 @@ bool Motor::InitFOC(float _zeroElectricOffset, EncoderBase::Direction _sensorDir
 
         encoder->Update();
         estimateAngle = GetEstimateAngle();
+        ResetPositionTrajectory(estimateAngle);
     }
 
     return true;
@@ -279,6 +289,167 @@ bool Motor::AlignSensor()
     return true;
 }
 
+void Motor::ResetPositionTrajectory(float position)
+{
+    trajectoryPlanned_ = false;
+    trajectoryTarget_ = position;
+    trajectoryElapsed_ = 0.0f;
+    trajectoryTotalTime_ = 0.0f;
+    trajectoryAccelTime_ = 0.0f;
+    trajectoryCruiseTime_ = 0.0f;
+    trajectoryDecelTime_ = 0.0f;
+    trajectoryInitialPosition_ = position;
+    trajectoryFinalPosition_ = position;
+    trajectoryInitialVelocity_ = 0.0f;
+    trajectoryReachedVelocity_ = 0.0f;
+    trajectoryAcceleration_ = 0.0f;
+    trajectoryDeceleration_ = 0.0f;
+    trajectoryAccelEndPosition_ = position;
+    setPointAngle = position;
+    setPointVelocity = 0.0f;
+    motionTelemetry_ = {};
+    motionTelemetry_.trajectoryPosition = position;
+}
+
+void Motor::PlanPositionTrajectory(float targetPosition)
+{
+    const float initialPosition = motionTelemetry_.trajectoryPosition;
+    const float initialVelocity = motionTelemetry_.trajectoryVelocity;
+    const float displacement = targetPosition - initialPosition;
+    const float velocityLimit = std::fabs(config.positionVelocityLimit);
+    const float accelerationLimit = std::fabs(config.positionAccelerationLimit);
+    const float decelerationLimit = std::fabs(config.positionDecelerationLimit);
+
+    trajectoryTarget_ = targetPosition;
+    trajectoryInitialPosition_ = initialPosition;
+    trajectoryFinalPosition_ = targetPosition;
+    trajectoryInitialVelocity_ = initialVelocity;
+    trajectoryElapsed_ = 0.0f;
+    trajectoryPlanned_ = true;
+
+    if (velocityLimit < 1e-3f || accelerationLimit < 1e-3f ||
+        decelerationLimit < 1e-3f ||
+        (std::fabs(displacement) < 1e-5f &&
+         std::fabs(initialVelocity) < 1e-3f))
+    {
+        trajectoryTotalTime_ = 0.0f;
+        trajectoryAccelTime_ = 0.0f;
+        trajectoryCruiseTime_ = 0.0f;
+        trajectoryDecelTime_ = 0.0f;
+        trajectoryReachedVelocity_ = 0.0f;
+        trajectoryAcceleration_ = 0.0f;
+        trajectoryDeceleration_ = 0.0f;
+        trajectoryAccelEndPosition_ = targetPosition;
+        motionTelemetry_.trajectoryPosition = targetPosition;
+        motionTelemetry_.trajectoryVelocity = 0.0f;
+        motionTelemetry_.trajectoryAcceleration = 0.0f;
+        return;
+    }
+
+    // ODrive-style online trapezoidal planner. The stopping displacement is
+    // included when choosing the travel direction, so a new target can be
+    // accepted safely while the previous multi-turn move is still in progress.
+    const float stoppingDisplacement =
+            std::copysign(initialVelocity * initialVelocity /
+                          (2.0f * decelerationLimit),
+                          initialVelocity);
+    const float direction =
+            (displacement - stoppingDisplacement) >= 0.0f ? 1.0f : -1.0f;
+    float acceleration = direction * accelerationLimit;
+    const float deceleration = -direction * decelerationLimit;
+    float reachedVelocity = direction * velocityLimit;
+
+    if (direction * initialVelocity > velocityLimit)
+    {
+        acceleration = -direction * accelerationLimit;
+    }
+
+    float accelerationTime =
+            (reachedVelocity - initialVelocity) / acceleration;
+    float decelerationTime = -reachedVelocity / deceleration;
+    const float minimumDisplacement =
+            0.5f * accelerationTime * (reachedVelocity + initialVelocity) +
+            0.5f * decelerationTime * reachedVelocity;
+    float cruiseTime = 0.0f;
+
+    if (direction * displacement < direction * minimumDisplacement)
+    {
+        const float numerator =
+                deceleration * initialVelocity * initialVelocity +
+                2.0f * acceleration * deceleration * displacement;
+        const float denominator = deceleration - acceleration;
+        reachedVelocity = direction *
+                std::sqrt(std::fmax(numerator / denominator, 0.0f));
+        accelerationTime =
+                std::fmax((reachedVelocity - initialVelocity) / acceleration,
+                          0.0f);
+        decelerationTime =
+                std::fmax(-reachedVelocity / deceleration, 0.0f);
+    }
+    else
+    {
+        cruiseTime = (displacement - minimumDisplacement) / reachedVelocity;
+    }
+
+    trajectoryAccelTime_ = std::fmax(accelerationTime, 0.0f);
+    trajectoryCruiseTime_ = std::fmax(cruiseTime, 0.0f);
+    trajectoryDecelTime_ = std::fmax(decelerationTime, 0.0f);
+    trajectoryTotalTime_ = trajectoryAccelTime_ +
+                           trajectoryCruiseTime_ +
+                           trajectoryDecelTime_;
+    trajectoryReachedVelocity_ = reachedVelocity;
+    trajectoryAcceleration_ = acceleration;
+    trajectoryDeceleration_ = deceleration;
+    trajectoryAccelEndPosition_ =
+            initialPosition +
+            initialVelocity * trajectoryAccelTime_ +
+            0.5f * acceleration * trajectoryAccelTime_ * trajectoryAccelTime_;
+}
+
+void Motor::UpdatePositionTrajectory(float dt)
+{
+    trajectoryElapsed_ += dt;
+    const float t = trajectoryElapsed_;
+    if (t < trajectoryAccelTime_)
+    {
+        motionTelemetry_.trajectoryPosition =
+                trajectoryInitialPosition_ +
+                trajectoryInitialVelocity_ * t +
+                0.5f * trajectoryAcceleration_ * t * t;
+        motionTelemetry_.trajectoryVelocity =
+                trajectoryInitialVelocity_ + trajectoryAcceleration_ * t;
+        motionTelemetry_.trajectoryAcceleration = trajectoryAcceleration_;
+    }
+    else if (t < trajectoryAccelTime_ + trajectoryCruiseTime_)
+    {
+        const float cruiseElapsed = t - trajectoryAccelTime_;
+        motionTelemetry_.trajectoryPosition =
+                trajectoryAccelEndPosition_ +
+                trajectoryReachedVelocity_ * cruiseElapsed;
+        motionTelemetry_.trajectoryVelocity = trajectoryReachedVelocity_;
+        motionTelemetry_.trajectoryAcceleration = 0.0f;
+    }
+    else if (t < trajectoryTotalTime_)
+    {
+        // Evaluate backward from the final point to avoid accumulating
+        // integration error in the deceleration segment.
+        const float timeToFinish = t - trajectoryTotalTime_;
+        motionTelemetry_.trajectoryPosition =
+                trajectoryFinalPosition_ +
+                0.5f * trajectoryDeceleration_ *
+                timeToFinish * timeToFinish;
+        motionTelemetry_.trajectoryVelocity =
+                trajectoryDeceleration_ * timeToFinish;
+        motionTelemetry_.trajectoryAcceleration = trajectoryDeceleration_;
+    }
+    else
+    {
+        motionTelemetry_.trajectoryPosition = trajectoryFinalPosition_;
+        motionTelemetry_.trajectoryVelocity = 0.0f;
+        motionTelemetry_.trajectoryAcceleration = 0.0f;
+    }
+}
+
 
 void Motor::CloseLoopControlTick()
 {
@@ -306,48 +477,51 @@ void Motor::CloseLoopControlTick()
     {
         case ControlMode_t::TORQUE:
             setPointCurrentTarget = target;
+            motionTelemetry_.currentCommand = setPointCurrentTarget;
             break;
         case ControlMode_t::ANGLE:
             setPointAngle = target;
             if (runVelocityLoop)
             {
-                // Both values are absolute mechanical angles accumulated across
-                // revolutions. Do not wrap this error into a single-turn range.
-                const float multiTurnPositionError = setPointAngle - estimateAngle;
-                float desiredVelocity = config.pidAngle(multiTurnPositionError);
+                float velocityDt = controlLoopDeltaT_ *
+                                   static_cast<float>(velocityLoopDecimation_);
+                if (velocityDt <= 0.0f || velocityDt > 0.05f)
+                    velocityDt = 1e-3f;
 
-                // Limit speed by the remaining braking distance, then slew the
-                // velocity command. A large position step therefore becomes a
-                // bounded accelerate/cruise/decelerate trajectory instead of an
-                // instantaneous full-speed command followed by rapid reversal.
-                const float accelerationLimit = std::fabs(config.positionAccelerationLimit);
-                if (accelerationLimit > 1e-3f)
+                if (!trajectoryPlanned_ || setPointAngle != trajectoryTarget_)
                 {
-                    const float brakingVelocity =
-                            SQRT(2.0f * accelerationLimit *
-                                 std::fabs(multiTurnPositionError));
-                    if (desiredVelocity > brakingVelocity)
-                        desiredVelocity = brakingVelocity;
-                    else if (desiredVelocity < -brakingVelocity)
-                        desiredVelocity = -brakingVelocity;
-
-                    float velocityDt = controlLoopDeltaT_ *
-                                       static_cast<float>(velocityLoopDecimation_);
-                    if (velocityDt <= 0.0f || velocityDt > 0.05f)
-                        velocityDt = 1e-3f;
-
-                    const float maxVelocityStep = accelerationLimit * velocityDt;
-                    float velocityDelta = desiredVelocity - setPointVelocity;
-                    if (velocityDelta > maxVelocityStep)
-                        velocityDelta = maxVelocityStep;
-                    else if (velocityDelta < -maxVelocityStep)
-                        velocityDelta = -maxVelocityStep;
-                    setPointVelocity += velocityDelta;
+                    PlanPositionTrajectory(setPointAngle);
                 }
-                else
+                UpdatePositionTrajectory(velocityDt);
+
+                motionTelemetry_.limitFlags = LIMIT_NONE;
+                const float positionError =
+                        motionTelemetry_.trajectoryPosition - estimateAngle;
+                float velocityCommand =
+                        motionTelemetry_.trajectoryVelocity +
+                        config.pidAngle(positionError);
+                float velocitySafetyLimit =
+                        std::fabs(config.positionVelocitySafetyLimit);
+                if (velocitySafetyLimit < 1e-3f)
                 {
-                    setPointVelocity = desiredVelocity;
+                    velocitySafetyLimit =
+                            1.2f * std::fabs(config.positionVelocityLimit);
                 }
+                const float unconstrainedVelocityCommand = velocityCommand;
+                velocityCommand = CONSTRAINT(velocityCommand,
+                                             -velocitySafetyLimit,
+                                             velocitySafetyLimit);
+                if (velocityCommand != unconstrainedVelocityCommand)
+                {
+                    motionTelemetry_.limitFlags |= LIMIT_VELOCITY_COMMAND;
+                }
+                if (std::fabs(motionTelemetry_.trajectoryVelocity) >=
+                    std::fmax(std::fabs(config.positionVelocityLimit) - 1e-3f,
+                              0.0f))
+                {
+                    motionTelemetry_.limitFlags |= LIMIT_TRAJECTORY_VELOCITY;
+                }
+                setPointVelocity = velocityCommand;
 
                 const bool positionUsesCurrent =
                         currentSense || ASSERT(phaseResistance);
@@ -369,37 +543,85 @@ void Motor::CloseLoopControlTick()
                     config.pidVelocity.limit = positionActuatorLimit;
                 }
 
+                const float velocityError =
+                        setPointVelocity - estimateVelocity;
                 float positionActuatorTarget =
-                        config.pidVelocity(setPointVelocity - estimateVelocity);
+                        config.pidVelocity(velocityError);
+                motionTelemetry_.frictionCurrent = 0.0f;
 
-                // Coulomb-friction compensation for position holding. A small
-                // deadband prevents chatter at the encoder noise floor, while
-                // the linear blend avoids a discontinuous current step.
                 if (positionUsesCurrent)
                 {
-                    const float absPositionError =
-                            std::fabs(multiTurnPositionError);
+                    // Acceleration feedforward improves move response without
+                    // raising feedback gains, while the friction term preserves
+                    // the stable low-speed behavior of the previous controller.
+                    positionActuatorTarget +=
+                            config.positionAccelerationCurrentGain *
+                            motionTelemetry_.trajectoryAcceleration;
+
+                    const float absPositionError = std::fabs(positionError);
                     const float deadband =
                             std::fabs(config.positionDeadband);
-                    const float frictionCurrent =
+                    const float kineticFrictionCurrent =
                             std::fabs(config.positionFrictionCurrent);
-                    if (frictionCurrent > 0.0f &&
-                        absPositionError > deadband)
+                    const float stictionCurrent =
+                            std::fmax(std::fabs(config.positionStictionCurrent),
+                                      kineticFrictionCurrent);
+                    if (stictionCurrent > 0.0f)
                     {
-                        const float blendRange =
-                                std::fmax(4.0f * deadband, 1e-3f);
-                        const float blend = CONSTRAINT(
-                                (absPositionError - deadband) / blendRange,
-                                0.0f,
-                                1.0f);
-                        positionActuatorTarget +=
-                                (multiTurnPositionError > 0.0f ? 1.0f : -1.0f) *
-                                frictionCurrent * blend;
+                        const float absTrajectoryVelocity =
+                                std::fabs(motionTelemetry_.trajectoryVelocity);
+                        const float lowSpeedBlend =
+                                1.0f - CONSTRAINT(
+                                        std::fabs(estimateVelocity) / 0.30f,
+                                        0.0f,
+                                        1.0f);
+                        const float frictionMagnitude =
+                                kineticFrictionCurrent +
+                                (stictionCurrent - kineticFrictionCurrent) *
+                                lowSpeedBlend;
+                        const float motionActivation =
+                                CONSTRAINT(absTrajectoryVelocity / 0.20f,
+                                           0.0f,
+                                           1.0f);
+                        const float errorActivation =
+                                CONSTRAINT(
+                                        (absPositionError - deadband) /
+                                        std::fmax(4.0f * deadband, 1e-3f),
+                                        0.0f,
+                                        1.0f);
+                        const float activation =
+                                std::fmax(motionActivation, errorActivation);
+                        float directionReference =
+                                motionTelemetry_.trajectoryVelocity;
+                        if (std::fabs(directionReference) < 0.02f)
+                        {
+                            directionReference = positionError;
+                        }
+                        if (std::fabs(directionReference) > 1e-6f &&
+                            activation > 0.0f)
+                        {
+                            motionTelemetry_.frictionCurrent =
+                                    std::copysign(frictionMagnitude * activation,
+                                                  directionReference);
+                            positionActuatorTarget +=
+                                    motionTelemetry_.frictionCurrent;
+                        }
                     }
                 }
-                setPointCurrentTarget = CONSTRAINT(positionActuatorTarget,
-                                                   -positionActuatorLimit,
-                                                   positionActuatorLimit);
+                const float unconstrainedActuatorTarget =
+                        positionActuatorTarget;
+                setPointCurrentTarget =
+                        CONSTRAINT(positionActuatorTarget,
+                                   -positionActuatorLimit,
+                                   positionActuatorLimit);
+                if (setPointCurrentTarget != unconstrainedActuatorTarget)
+                {
+                    motionTelemetry_.limitFlags |= LIMIT_POSITION_CURRENT;
+                }
+                motionTelemetry_.velocityCommand = velocityCommand;
+                motionTelemetry_.currentCommand = setPointCurrentTarget;
+                motionTelemetry_.positionError = positionError;
+                motionTelemetry_.velocityError = velocityError;
             }
             break;
         case ControlMode_t::VELOCITY:
@@ -411,6 +633,10 @@ void Motor::CloseLoopControlTick()
                         ? std::fabs(config.currentLimit)
                         : std::fabs(config.voltageLimit);
                 setPointCurrentTarget = config.pidVelocity(setPointVelocity - estimateVelocity);
+                motionTelemetry_.velocityCommand = setPointVelocity;
+                motionTelemetry_.currentCommand = setPointCurrentTarget;
+                motionTelemetry_.velocityError =
+                        setPointVelocity - estimateVelocity;
             }
             break;
         case ControlMode_t::VELOCITY_OPEN_LOOP:
@@ -474,8 +700,10 @@ void Motor::FocOutputTick()
     }
 
     const float voltageMagnitude = SQRT(voltage.d * voltage.d + voltage.q * voltage.q);
+    motionTelemetry_.limitFlags &= ~LIMIT_VOLTAGE;
     if (voltageMagnitude > config.voltageLimit && voltageMagnitude > 1e-6f)
     {
+        motionTelemetry_.limitFlags |= LIMIT_VOLTAGE;
         const float scale = config.voltageLimit / voltageMagnitude;
         voltage.d *= scale;
         voltage.q *= scale;

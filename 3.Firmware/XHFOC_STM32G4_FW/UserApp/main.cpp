@@ -247,8 +247,10 @@ static void ThreadVofa(void* argument)
 {
     (void)argument;
 
-    constexpr uint32_t kVofaPeriodMs = 1U; // 500Hz
-    constexpr size_t kVofaChannelCount = 16U;
+    // 28 floats + 4-byte JustFloat tail = 116 bytes/frame. At 500 Hz this is
+    // 58 kB/s, about 63% of a 921600-baud 8N1 UART's payload capacity.
+    constexpr uint32_t kVofaPeriodMs = 2U;
+    constexpr size_t kVofaChannelCount = 28U;
     float channels[kVofaChannelCount] = {0.0f};
 
     for (;;)
@@ -258,9 +260,17 @@ static void ThreadVofa(void* argument)
         const PhaseCurrent_t phaseCurrent = currentSense.GetLastPhaseCurrents();
         const AlphaBetaCurrent_t alphaBetaCurrent = currentSense.GetLastAlphaBetaCurrents();
         const DqCurrent_t dqCurrent = focMotor.GetLastDqCurrent();
+        const Motor::MotionTelemetry_t motion = focMotor.GetMotionTelemetry();
 
         // Channel order:
-        // dutyA, dutyB, dutyC, iA, iB, iC, iAlpha, iBeta, iq, id, position, velocity, target, adcRawIa, adcRawIb, adcRawIc
+        // Existing signals:
+        // dutyA, dutyB, dutyC, iA, iB, iC, iAlpha, iBeta, iq, id,
+        // position, velocity, target, adcRawIa, adcRawIb, adcRawIc.
+        // Motion/RTOS diagnostics:
+        // trajectoryPosition, trajectoryVelocity, trajectoryAcceleration,
+        // velocityCommand, currentCommand, positionError, velocityError,
+        // controlLimitFlags, focStackFreeBytes, vofaStackFreeBytes,
+        // rawVelocity, frictionCurrent.
         channels[0] = focDriver.dutyA;
         channels[1] = focDriver.dutyB;
         channels[2] = focDriver.dutyC;
@@ -277,6 +287,24 @@ static void ThreadVofa(void* argument)
         channels[13] = static_cast<float>(currentSense.rawAdcVal[0]);
         channels[14] = static_cast<float>(currentSense.rawAdcVal[1]);
         channels[15] = static_cast<float>(currentSense.rawAdcVal[2]);
+        channels[16] = motion.trajectoryPosition;
+        channels[17] = motion.trajectoryVelocity;
+        channels[18] = motion.trajectoryAcceleration;
+        channels[19] = motion.velocityCommand;
+        channels[20] = motion.currentCommand;
+        channels[21] = motion.positionError;
+        channels[22] = motion.velocityError;
+        channels[23] = static_cast<float>(motion.limitFlags);
+        channels[24] = focControlTaskHandle
+                ? static_cast<float>(
+                        uxTaskGetStackHighWaterMark(
+                                static_cast<TaskHandle_t>(focControlTaskHandle)) *
+                        sizeof(StackType_t))
+                : 0.0f;
+        channels[25] = static_cast<float>(
+                uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t));
+        channels[26] = focMotor.state.rawVelocity;
+        channels[27] = motion.frictionCurrent;
 
         (void)vofaDebug.SendJustFloat(channels, kVofaChannelCount);
         osDelay(kVofaPeriodMs);
@@ -296,7 +324,7 @@ void Main(void)
 
     const osThreadAttr_t focControlTask_attributes = {
         .name = "focControlTask",
-        .stack_size = 2048,
+        .stack_size = 1792,
         .priority = (osPriority_t)osPriorityRealtime,
     };
     focControlTaskHandle = osThreadNew(ThreadFocControl, nullptr, &focControlTask_attributes);
@@ -318,7 +346,10 @@ void Main(void)
 
     const osThreadAttr_t vofaTask_attributes = {
         .name = "vofaTask",
-        .stack_size = 1024,
+        // The channel array grows by 48 bytes; SendJustFloat still uses its
+        // fixed 132-byte frame buffer. Keep extra headroom and publish the live
+        // high-water mark in VOFA channels 25/26.
+        .stack_size = 1280,
         .priority = (osPriority_t)osPriorityBelowNormal,
     };
     vofaTaskHandle = osThreadNew(ThreadVofa, nullptr, &vofaTask_attributes);

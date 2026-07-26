@@ -27,6 +27,17 @@ class DecodeCaptureTests(unittest.TestCase):
     def test_project_decoder_config_tracks_firmware_baudrate(self) -> None:
         config = load_decoder_config(DEFAULT_DECODER_CONFIG)
         self.assertEqual(config.expected_baudrate, 921600)
+        self.assertEqual(len(config.channels), 28)
+        self.assertEqual(
+            config.channels[-5:],
+            (
+                "controlLimitFlags",
+                "focStackFreeBytes",
+                "vofaStackFreeBytes",
+                "rawVelocity",
+                "frictionCurrent",
+            ),
+        )
 
     def test_summary_reports_capture_baudrate_mismatch(self) -> None:
         config = load_decoder_config(DEFAULT_DECODER_CONFIG)

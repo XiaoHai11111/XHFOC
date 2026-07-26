@@ -19,6 +19,18 @@
     "target",
     "adcRawIa",
     "adcRawIb",
-    "adcRawIc"
+    "adcRawIc",
+    "trajectoryPosition",
+    "trajectoryVelocity",
+    "trajectoryAcceleration",
+    "velocityCommand",
+    "currentCommand",
+    "positionError",
+    "velocityError",
+    "controlLimitFlags",
+    "focStackFreeBytes",
+    "vofaStackFreeBytes",
+    "rawVelocity",
+    "frictionCurrent"
   ]
 }

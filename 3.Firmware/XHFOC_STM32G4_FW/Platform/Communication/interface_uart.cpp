@@ -138,7 +138,7 @@ static void UartServerTask(void* ctx)
 
 const osThreadAttr_t uartServerTask_attributes = {
     .name = "UartServerTask",
-    .stack_size = 1536,
+    .stack_size = 1280,
     .priority = (osPriority_t) osPriorityAboveNormal,
 };
 

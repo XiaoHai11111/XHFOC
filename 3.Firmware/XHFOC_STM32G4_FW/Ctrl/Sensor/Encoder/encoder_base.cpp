@@ -22,20 +22,36 @@ void EncoderBase::Update()
 
 float EncoderBase::GetVelocity()
 {
-    float time = static_cast<float>(angleTimestamp - velocityTimestamp) * 1e-6f;
-    // Quick fix for strange cases (micros overflow)
-    if (time <= 0.0f)
+    // At a 10 kHz control rate one MT6816 count would appear as roughly
+    // 3.8 rad/s when differentiated sample-by-sample. Accumulate encoder
+    // movement over a 1 ms window instead, then hold that estimate between
+    // updates. This reduces the single-count step to about 0.38 rad/s while
+    // retaining enough bandwidth for the outer position loop.
+    constexpr uint64_t kVelocityWindowUs = 1000U;
+    const uint64_t elapsedUs = angleTimestamp - velocityTimestamp;
+    if (elapsedUs < kVelocityWindowUs)
     {
-        time = 1e-3f;
+        return velocityEstimate;
     }
 
-    const float vel = (static_cast<float>(rotationCount - rotationCountLast) * _2PI + (angleLast - velocityLast)) / time;
+    const float elapsedSeconds = static_cast<float>(elapsedUs) * 1e-6f;
+    if (elapsedSeconds <= 0.0f || elapsedSeconds > 0.1f)
+    {
+        velocityEstimate = 0.0f;
+    }
+    else
+    {
+        const float deltaPosition =
+                static_cast<float>(rotationCount - rotationCountLast) * _2PI +
+                (angleLast - velocityLast);
+        velocityEstimate = deltaPosition / elapsedSeconds;
+    }
 
     velocityLast = angleLast;
     rotationCountLast = rotationCount;
     velocityTimestamp = angleTimestamp;
 
-    return vel;
+    return velocityEstimate;
 }
 
 void EncoderBase::VarInit()
@@ -46,6 +62,7 @@ void EncoderBase::VarInit()
 
     velocityLast = GetRawAngle();
     velocityTimestamp = micros();
+    velocityEstimate = 0.0f;
     delay(1);
 
     (void)GetRawAngle();

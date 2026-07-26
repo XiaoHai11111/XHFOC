@@ -194,7 +194,7 @@ void usb_rx_process_packet(uint8_t *buf, uint32_t len, uint8_t endpoint_pair)
 
 const osThreadAttr_t usbServerTask_attributes = {
     .name = "UsbServerTask",
-    .stack_size = 1536,
+    .stack_size = 1280,
     .priority = (osPriority_t) osPriorityAboveNormal,
 };
 
